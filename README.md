@@ -10,7 +10,8 @@
 |---|---|---|
 | 1 | Requirements, domain model, architecture | ✅ Approved |
 | 2 | Backend foundation, database, authentication | ✅ Implemented |
-| 3–10 | See [docs/ROADMAP.md](docs/ROADMAP.md) | Planned |
+| 3 | Applicants, loan products, loan applications and review workflow | ✅ Implemented |
+| 4–10 | See [docs/ROADMAP.md](docs/ROADMAP.md) | Planned |
 
 ## Documentation
 

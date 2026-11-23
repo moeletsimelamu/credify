@@ -92,7 +92,7 @@ users ──1:0..1── applicants ──1:*── employment_records
 
 **`applicants`** — `id`, `user_id FK UNIQUE NULL`, `first_name`, `last_name`, `date_of_birth DATE` *(eligibility check ≥ 18 only — never a model feature)*, `email`, `phone`, `address_line1`, `address_line2`, `city`, `postal_code`, `country CHAR(2)`, `synthetic_reference` (UNIQUE, replaces a national ID), `created_by FK users`, timestamps.
 
-**`employment_records`** — `id`, `applicant_id FK`, `employer_name`, `job_title`, `employment_type` (`PERMANENT`, `CONTRACT`, `SELF_EMPLOYED`, `PART_TIME`, `UNEMPLOYED`, `RETIRED`), `start_date`, `end_date NULL`, `is_current`. `CHECK (end_date IS NULL OR end_date >= start_date)`.
+**`employment_records`** — `id`, `applicant_id FK`, `employer_name NULL`, `job_title NULL`, `employment_type` (`PERMANENT`, `CONTRACT`, `SELF_EMPLOYED`, `PART_TIME`, `UNEMPLOYED`, `RETIRED`), `start_date NULL`, `end_date NULL`, `is_current`, `is_active`. `CHECK (end_date IS NULL OR end_date >= start_date)`, `CHECK (NOT (is_current AND end_date IS NOT NULL))`. Employer and start date are required by the API for every type except `UNEMPLOYED` and `RETIRED`.
 
 **`income_records`**
 | Column | Type | Notes |
@@ -130,13 +130,15 @@ users ──1:0..1── applicants ──1:*── employment_records
 | version_id | INTEGER | Optimistic lock |
 | created_at / updated_at | | |
 
-Indexes: `(status, submitted_at)`, `(applicant_id)`, `(assigned_officer_id, status)`.
+Indexes: `(status, submitted_at)`, `(applicant_id)`, `(assigned_officer_id, status)`, and the partial unique index `uq_loan_applications_one_open_per_applicant ON (applicant_id) WHERE status NOT IN ('APPROVED','DECLINED','WITHDRAWN')`.
+
+`reference` is `CRD-<year>-<n>` where `n` comes from the sequence `loan_application_reference_seq`, zero-padded to six digits.
 
 **`application_status_history`** *(append-only)* — `id`, `application_id FK`, `from_status NULL`, `to_status`, `actor_user_id FK NULL` (NULL = system), `reason TEXT NULL`, `created_at`.
 
 **`review_notes`** *(append-only)* — `id`, `application_id`, `author_id`, `note_type` (`OFFICER_NOTE`, `ANALYST_ASSESSMENT`, `SYSTEM`), `body`, `created_at`.
 
-**`information_requests`** — `id`, `application_id`, `requested_by`, `message`, `status` (`OPEN`, `RESPONDED`, `CANCELLED`), `response_text NULL`, `responded_at NULL`, `created_at`.
+**`information_requests`** — `id`, `application_id`, `requested_by`, `message`, `status` (`OPEN`, `RESPONDED`, `CANCELLED`), `response_text NULL`, `responded_at NULL`, `created_at`. `CHECK ((status = 'RESPONDED') = (response_text IS NOT NULL AND responded_at IS NOT NULL))`. Open requests are cancelled when the application is withdrawn.
 
 **`document_references`** — `id`, `application_id`, `document_type` (`PAYSLIP`, `BANK_STATEMENT`, `ID_DOCUMENT`, `PROOF_OF_ADDRESS`, `OTHER`), `file_name`, `storage_key` (simulated reference, no real files in v1), `content_type`, `size_bytes`, `uploaded_by`, `uploaded_at`, `status` (`RECEIVED`, `ACCEPTED`, `REJECTED`).
 
