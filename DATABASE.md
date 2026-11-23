@@ -148,8 +148,9 @@ Indexes: `(status, submitted_at)`, `(applicant_id)`, `(assigned_officer_id, stat
 | Column | Type | Notes |
 |---|---|---|
 | id, application_id FK | | |
-| version | INTEGER | `UNIQUE (application_id, version)` |
+| version | INTEGER | `UNIQUE (application_id, version)` (also serves as the application_id index); `CHECK (version >= 1)` |
 | calculator_version | TEXT | e.g. `affordability-1.0.0` |
+| run_reason | TEXT | `SUBMISSION`, `RESUBMISSION` (review resumed after more information), `STAFF_REQUEST` |
 | inputs_snapshot | JSONB | Every income/expense/commitment row + product terms used |
 | gross_monthly_income, net_monthly_income | NUMERIC(18,2) | |
 | declared_living_expenses, expense_norm, applied_living_expenses | NUMERIC(18,2) | |
@@ -158,11 +159,11 @@ Indexes: `(status, submitted_at)`, `(applicant_id)`, `(assigned_officer_id, stat
 | proposed_instalment | NUMERIC(18,2) | |
 | residual_income | NUMERIC(18,2) | May be negative |
 | required_buffer | NUMERIC(18,2) | |
-| debt_to_income_ratio, repayment_burden_ratio | NUMERIC(10,4) | |
+| debt_to_income_ratio, repayment_burden_ratio, new_loan_burden_ratio | NUMERIC(24,4) NULL | NULL when there is no counted income. Wider than the product thresholds because a ratio can be far above 1 and must still be stored exactly |
 | outcome | TEXT | `AFFORDABLE`, `MARGINAL`, `UNAFFORDABLE`, `INSUFFICIENT_DATA` |
-| rule_results | JSONB | Each rule: id, threshold, actual, passed |
+| rule_results | JSONB | Each rule: id, name, status (`PASSED`, `FAILED`, `NOT_EVALUATED`), effect, threshold, actual, explanation |
 | currency | CHAR(3) | |
-| created_by FK NULL, created_at | | |
+| created_by FK NULL, created_at | | NULL for automatic runs (submission, resubmission) |
 
 **`model_versions`**
 | Column | Type | Notes |

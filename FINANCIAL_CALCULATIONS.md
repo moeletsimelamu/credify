@@ -85,7 +85,9 @@ Total interest 6,618.53; total repaid 106,618.53. Note the final instalment is 0
 ### 3.3 Verification strategy
 
 - Golden test vectors (A, B, zero-rate, 1-month term, 120-month term, high rate) with expected values computed **independently** — by spreadsheet `PMT/IPMT` and by `numpy-financial` (a test-only dependency, never used in production code).
-- Property-based tests (Hypothesis) over random valid inputs: `B_n == 0`, `Σ principal == P`, every `interest_k ≥ 0`, every non-final instalment equals `A`, `|final − A| < n × 0.01`, balances strictly decreasing.
+- Property-based tests (Hypothesis) over random valid inputs: `B_n == 0`, `Σ principal == P`, every `interest_k ≥ 0`, every non-final instalment equals `A`, balances strictly decreasing, and `|final − A| ≤ 0.01 × Σ_{k=0…n} (1 + r)^k`.
+  - *Correction (Phase 4):* the bound first written here, `|final − A| < n × 0.01`, holds only at low rates. Each period adds up to one cent of rounding error, and the error already in the balance accrues interest, so the drift compounds. Hypothesis found a counterexample (1,000.00 at 34.0157 % over 62 months: final differs by 0.63, above 0.62). The compounding bound above reduces to `0.01 × (n + 1)` at a zero rate.
+- Terms that cannot be amortised in whole cents (an instalment that would leave the balance flat, growing or cleared before the last period, e.g. 1.00 over 60 months) are rejected with a clear error rather than producing a broken schedule.
 
 ## 4. Affordability assessment
 
