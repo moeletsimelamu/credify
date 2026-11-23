@@ -16,8 +16,11 @@ from app.core.db import build_engine, build_session_factory
 from app.core.errors import register_error_handlers
 from app.core.logging import configure_logging
 from app.core.middleware import RequestContextMiddleware
+from app.modules.applicants.router import router as applicants_router
+from app.modules.applications.router import router as applications_router
 from app.modules.audit.router import router as audit_router
 from app.modules.identity.router import auth_router, users_router
+from app.modules.products.router import router as products_router
 
 API_PREFIX = "/api/v1"
 
@@ -26,6 +29,9 @@ def build_api_router() -> APIRouter:
     router = APIRouter()
     router.include_router(auth_router)
     router.include_router(users_router)
+    router.include_router(products_router)
+    router.include_router(applicants_router)
+    router.include_router(applications_router)
     router.include_router(audit_router)
     return router
 
