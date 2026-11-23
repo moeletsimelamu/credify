@@ -22,7 +22,6 @@ from tests.conftest import (
     Party,
     application_payload,
     create_application,
-    force_status,
 )
 
 pytestmark = pytest.mark.integration
@@ -44,11 +43,12 @@ def draft(client: TestClient, borrower: Borrower, product: dict[str, Any]) -> di
 
 @pytest.fixture
 def in_review_queue(
-    client: TestClient, borrower: Borrower, draft: dict[str, Any], db_session: Session
+    client: TestClient, borrower: Borrower, draft: dict[str, Any]
 ) -> dict[str, Any]:
-    """A submitted application moved to PENDING_REVIEW (Phase 4 will do this automatically)."""
-    assert client.post(_url(draft, "/submit"), headers=borrower.party.headers).status_code == 200
-    force_status(db_session, draft["id"], "PENDING_REVIEW")
+    """A submitted application: assessed and queued for review automatically."""
+    response = client.post(_url(draft, "/submit"), headers=borrower.party.headers)
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "PENDING_REVIEW"
     return draft
 
 
@@ -240,7 +240,8 @@ def test_submit_snapshots_terms_and_records_history(
     response = client.post(_url(draft, "/submit"), headers=borrower.party.headers)
     assert response.status_code == 200, response.text
     body = response.json()
-    assert body["status"] == "SUBMITTED"
+    # Submission assesses affordability and queues the application in one step.
+    assert body["status"] == "PENDING_REVIEW"
     assert body["submitted_at"].startswith("2026-11-18T09:00:00")
     snapshot = body["product_terms_snapshot"]
     assert snapshot["annual_interest_rate"] == "0.215000"
@@ -256,12 +257,17 @@ def test_submit_snapshots_terms_and_records_history(
     again = client.get(_url(draft), headers=borrower.party.headers).json()
     assert again["product_terms_snapshot"]["annual_interest_rate"] == "0.215000"
 
-    assert _history(client, draft, borrower.party) == ["DRAFT", "SUBMITTED"]
-    event = db_session.scalars(
-        select(AuditEvent).where(AuditEvent.action == "application.status_changed")
-    ).one()
-    assert event.changes == {"status": {"from": "DRAFT", "to": "SUBMITTED"}}
-    assert event.actor_user_id == borrower.party.user.id
+    assert _history(client, draft, borrower.party) == ["DRAFT", "SUBMITTED", "PENDING_REVIEW"]
+    submitted, queued = db_session.scalars(
+        select(AuditEvent)
+        .where(AuditEvent.action == "application.status_changed")
+        .order_by(AuditEvent.id)
+    ).all()
+    assert submitted.changes == {"status": {"from": "DRAFT", "to": "SUBMITTED"}}
+    assert submitted.actor_user_id == borrower.party.user.id
+    # Queueing is the system's step, not the applicant's.
+    assert queued.changes == {"status": {"from": "SUBMITTED", "to": "PENDING_REVIEW"}}
+    assert queued.actor_user_id is None
 
     # Submitted applications can no longer be edited or resubmitted.
     assert (
@@ -324,9 +330,9 @@ def test_staff_list_and_filter(
     client.post(_url(a, "/submit"), headers=first.party.headers)
 
     assert client.get(APPLICATIONS, headers=officer.headers).json()["total"] == 2
-    submitted = client.get(f"{APPLICATIONS}?status=SUBMITTED", headers=officer.headers).json()
-    assert [item["id"] for item in submitted["items"]] == [a["id"]]
-    both = client.get(f"{APPLICATIONS}?status=SUBMITTED&status=DRAFT", headers=officer.headers)
+    queued = client.get(f"{APPLICATIONS}?status=PENDING_REVIEW", headers=officer.headers).json()
+    assert [item["id"] for item in queued["items"]] == [a["id"]]
+    both = client.get(f"{APPLICATIONS}?status=PENDING_REVIEW&status=DRAFT", headers=officer.headers)
     assert both.json()["total"] == 2
     # Each applicant only ever sees their own.
     own = client.get(APPLICATIONS, headers=first.party.headers).json()

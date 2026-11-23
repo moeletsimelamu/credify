@@ -145,7 +145,7 @@ class TransitionFacts:
     can never make a guard pass.
     """
 
-    # SUBMIT
+    # SUBMIT (the profile counts also apply to RESUME_REVIEW)
     product_active: bool = False
     amount_within_limits: bool = False
     term_within_limits: bool = False
@@ -207,6 +207,20 @@ def _blank(text: str | None) -> bool:
     return text is None or not text.strip()
 
 
+def _profile_problems(facts: TransitionFacts) -> list[str]:
+    """A financial profile complete enough to assess (submission and resumed review)."""
+    problems = []
+    if facts.employment_records < 1:
+        problems.append("capture your employment details before submitting")
+    if facts.income_records < 1:
+        problems.append("capture at least one income source before submitting")
+    if facts.expense_records < 1:
+        problems.append("capture your monthly expenses before submitting")
+    if facts.records_in_other_currencies:
+        problems.append("all income, expenses and commitments must be in the loan currency")
+    return problems
+
+
 def _guard_submit(facts: TransitionFacts, _: Actor) -> list[str]:
     problems = []
     if not facts.product_active:
@@ -219,15 +233,7 @@ def _guard_submit(facts: TransitionFacts, _: Actor) -> list[str]:
         problems.append("the application currency must match the product currency")
     if not facts.applicant_is_adult:
         problems.append("the applicant must be at least 18 years old")
-    if facts.employment_records < 1:
-        problems.append("capture your employment details before submitting")
-    if facts.income_records < 1:
-        problems.append("capture at least one income source before submitting")
-    if facts.expense_records < 1:
-        problems.append("capture your monthly expenses before submitting")
-    if facts.records_in_other_currencies:
-        problems.append("all income, expenses and commitments must be in the loan currency")
-    return problems
+    return problems + _profile_problems(facts)
 
 
 def _guard_queue(facts: TransitionFacts, _: Actor) -> list[str]:
@@ -252,7 +258,9 @@ def _guard_resume(facts: TransitionFacts, _: Actor) -> list[str]:
     problems = []
     if facts.open_information_requests:
         problems.append("all information requests must be answered first")
-    if not facts.assessments_refreshed:
+    # The profile was editable while information was outstanding, so check it again.
+    problems += _profile_problems(facts)
+    if not problems and not facts.assessments_refreshed:
         problems.append("assessments must be re-run on the updated information")
     return problems
 
@@ -314,6 +322,19 @@ def transition(
     facts: TransitionFacts | None = None,
 ) -> Transition:
     """Validate ``action`` from ``status`` and return the resulting transition."""
+    rule = ensure_allowed(status, action, actor)
+    violations = GUARDS[action](facts or TransitionFacts(), actor)
+    if violations:
+        raise GuardViolationError(violations, action=action, status=status)
+    return Transition(action, status, rule.target)
+
+
+def ensure_allowed(status: ApplicationStatus, action: Action, actor: Actor) -> Rule:
+    """Check status and actor only (no guards).
+
+    For use cases that must do work, such as running an assessment, before the guard facts
+    exist; they still call :func:`transition` afterwards.
+    """
     rule = RULES[action]
     if status not in rule.sources:
         raise TransitionNotAllowedError(
@@ -326,10 +347,7 @@ def transition(
         raise ActorNotPermittedError(
             f"{action.value} is not available to this user", action=action, status=status
         )
-    violations = GUARDS[action](facts or TransitionFacts(), actor)
-    if violations:
-        raise GuardViolationError(violations, action=action, status=status)
-    return Transition(action, status, rule.target)
+    return rule
 
 
 def available_actions(status: ApplicationStatus, actor: Actor) -> list[Action]:

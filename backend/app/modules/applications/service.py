@@ -3,20 +3,19 @@
 Every status change goes through ``domain.state_machine.transition`` and is persisted with a
 status-history row and an audit event in the same transaction (ARCHITECTURE.md §5.2 #5).
 
-Not wired yet, by design:
-
-* ``QUEUE_FOR_REVIEW`` (SUBMITTED → PENDING_REVIEW) needs a persisted affordability
-  assessment, which arrives in Phase 4. Submitted applications wait in SUBMITTED until then.
-* ``RESUME_REVIEW`` needs re-run assessments (Phase 4).
-* Recommendations, send-back and decisions arrive in Phase 5.
+Submitting records affordability assessment v1 and queues the application for review in the
+same transaction (SUBMITTED → PENDING_REVIEW). Resuming review after an information request
+records a fresh assessment the same way. Credit-risk scoring joins both steps in Phase 7;
+recommendations, send-back and decisions arrive in Phase 5.
 """
 
 from __future__ import annotations
 
 import uuid
-from collections.abc import Sequence
-from dataclasses import dataclass
-from datetime import datetime
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
+from dataclasses import dataclass, replace
+from datetime import date, datetime
 from typing import Any
 
 from sqlalchemy import Select, func, select
@@ -32,6 +31,8 @@ from app.core.errors import (
 )
 from app.core.ids import uuid7
 from app.core.pagination import PageParams
+from app.modules.affordability import service as affordability
+from app.modules.affordability.models import AffordabilityAssessment, RunReason
 from app.modules.applicants import service as applicants
 from app.modules.applicants.models import Applicant
 from app.modules.applications.domain.enums import (
@@ -51,6 +52,7 @@ from app.modules.applications.domain.state_machine import (
     TransitionFacts,
     TransitionNotAllowedError,
     available_actions,
+    ensure_allowed,
     transition,
 )
 from app.modules.applications.models import (
@@ -69,11 +71,16 @@ from app.modules.applications.schemas import (
 from app.modules.audit import service as audit
 from app.modules.identity.models import Role, User
 from app.modules.identity.permissions import Permission, has_permission
+from app.modules.loans import service as loans
+from app.modules.loans.schemas import RepaymentSchedulePreview
 from app.modules.products import service as products
 from app.modules.products.models import LoanProduct
 
 S = ApplicationStatus
 ASSIGNABLE = frozenset({S.PENDING_REVIEW, S.UNDER_REVIEW, S.ADDITIONAL_INFO_REQUESTED})
+# Staff may re-run affordability while the application is with the lender and undecided.
+# Once a recommendation exists, the evidence it cites must stay the latest (Phase 5).
+ASSESSABLE = ASSIGNABLE
 SNAPSHOT_FIELDS = (
     "loan_product_id",
     "requested_amount",
@@ -175,14 +182,11 @@ def actions_for(loaded: Loaded, user: User) -> list[Action]:
 # --- Transitions ---------------------------------------------------------------------------
 
 
-def _apply(
-    application: LoanApplication,
-    action: Action,
-    actor: Actor,
-    facts: TransitionFacts | None = None,
-) -> Transition:
+@contextmanager
+def _transition_errors(application: LoanApplication, action: Action) -> Iterator[None]:
+    """Translate state-machine errors into problem responses."""
     try:
-        return transition(application.status, action, actor, facts)
+        yield
     except TransitionNotAllowedError as exc:
         raise InvalidTransitionError(
             exc.message, extra={"action": action.value, "status": application.status.value}
@@ -193,6 +197,22 @@ def _apply(
         raise BusinessRuleError(
             exc.message, extra={"action": action.value, "violations": exc.violations}
         ) from exc
+
+
+def _apply(
+    application: LoanApplication,
+    action: Action,
+    actor: Actor,
+    facts: TransitionFacts | None = None,
+) -> Transition:
+    with _transition_errors(application, action):
+        return transition(application.status, action, actor, facts)
+
+
+def _ensure(application: LoanApplication, action: Action, actor: Actor) -> None:
+    """Status and actor checks only, before doing work the guard facts depend on."""
+    with _transition_errors(application, action):
+        ensure_allowed(application.status, action, actor)
 
 
 def _record_transition(
@@ -396,29 +416,156 @@ def submit(
     profile = applicants.profile_summary(
         session, applicant, today=business_date(ctx.clock), currency=application.currency
     )
-    facts = TransitionFacts(
-        product_active=product.is_active,
-        amount_within_limits=product.min_amount
-        <= application.requested_amount
-        <= product.max_amount,
-        term_within_limits=product.min_term_months
-        <= application.requested_term_months
-        <= product.max_term_months,
-        currency_matches_product=application.currency == product.currency,
-        applicant_is_adult=profile.is_adult,
-        employment_records=profile.employment_records,
-        income_records=profile.income_records,
-        expense_records=profile.expense_records,
-        records_in_other_currencies=profile.records_in_other_currencies,
+    facts = _with_profile(
+        TransitionFacts(
+            product_active=product.is_active,
+            amount_within_limits=product.min_amount
+            <= application.requested_amount
+            <= product.max_amount,
+            term_within_limits=product.min_term_months
+            <= application.requested_term_months
+            <= product.max_term_months,
+            currency_matches_product=application.currency == product.currency,
+            applicant_is_adult=profile.is_adult,
+        ),
+        profile,
     )
     change = _apply(application, Action.SUBMIT, loaded.actor_for(ctx.user), facts)
     now = ctx.now()
     application.submitted_at = now
     application.product_terms_snapshot = products.terms_snapshot(product, captured_at=now)
     _record_transition(session, application, change, ctx)
+
+    # Automatic step: assess, then queue. Same transaction, so the review queue never holds
+    # an application without an affordability assessment.
+    assessment = _record_affordability(session, application, ctx, RunReason.SUBMISSION)
+    queued = _apply(
+        application,
+        Action.QUEUE_FOR_REVIEW,
+        Actor.system(),
+        TransitionFacts(has_affordability_assessment=True),
+    )
+    _record_transition(
+        session, application, queued, ctx, reason=_assessed(assessment), by_system=True
+    )
     session.commit()
     session.refresh(application)
     return application
+
+
+def _with_profile(facts: TransitionFacts, profile: applicants.ProfileSummary) -> TransitionFacts:
+    return replace(
+        facts,
+        employment_records=profile.employment_records,
+        income_records=profile.income_records,
+        expense_records=profile.expense_records,
+        records_in_other_currencies=profile.records_in_other_currencies,
+    )
+
+
+def _record_affordability(
+    session: Session,
+    application: LoanApplication,
+    ctx: Context,
+    run_reason: RunReason,
+    *,
+    requested_by: User | None = None,
+) -> AffordabilityAssessment:
+    return affordability.record_assessment(
+        session,
+        application,
+        run_reason=run_reason,
+        requested_by=requested_by,
+        now=ctx.now(),
+        as_of=business_date(ctx.clock),
+        ip_address=ctx.ip_address if requested_by else None,
+    )
+
+
+def _assessed(assessment: AffordabilityAssessment) -> str:
+    return f"Affordability assessment v{assessment.version}: {assessment.outcome.value}"
+
+
+def resume_review(
+    session: Session,
+    application_id: uuid.UUID,
+    ctx: Context,
+    *,
+    expected_version: int | None = None,
+) -> LoanApplication:
+    """ADDITIONAL_INFO_REQUESTED → PENDING_REVIEW, with a fresh assessment of the profile.
+
+    The applicant could edit their profile while information was outstanding, so it is
+    checked for completeness again and re-assessed before review resumes.
+    """
+    loaded = _load_owned(session, application_id, ctx, expected_version)
+    application = loaded.application
+    actor = loaded.actor_for(ctx.user)
+    _ensure(application, Action.RESUME_REVIEW, actor)
+    applicant = session.get(Applicant, application.applicant_id, with_for_update=True)
+    if applicant is None:  # FK makes this unreachable
+        raise NotFoundError("Application not found")
+    profile = applicants.profile_summary(
+        session, applicant, today=business_date(ctx.clock), currency=application.currency
+    )
+    open_requests = (
+        session.scalar(
+            select(func.count()).where(
+                InformationRequest.application_id == application.id,
+                InformationRequest.status == InformationRequestStatus.OPEN,
+            )
+        )
+        or 0
+    )
+    facts = _with_profile(TransitionFacts(open_information_requests=open_requests), profile)
+    # The refreshed assessment is the one precondition this use case satisfies itself: it is
+    # recorded just below, in the same transaction, before the status changes. Checking the
+    # rest first means missing answers are reported without assessing a stale profile.
+    change = _apply(
+        application, Action.RESUME_REVIEW, actor, replace(facts, assessments_refreshed=True)
+    )
+    assessment = _record_affordability(session, application, ctx, RunReason.RESUBMISSION)
+    _record_transition(session, application, change, ctx, reason=_assessed(assessment))
+    session.commit()
+    session.refresh(application)
+    return application
+
+
+# --- Affordability assessments -------------------------------------------------------------
+
+
+def run_affordability(
+    session: Session, application_id: uuid.UUID, ctx: Context
+) -> AffordabilityAssessment:
+    """A staff re-run on the applicant's current profile. Creates a new version."""
+    application = load(session, application_id, ctx.user, for_update=True).application
+    if application.status not in ASSESSABLE:
+        raise InvalidTransitionError(
+            f"Affordability cannot be re-run while the application is {application.status.value}",
+            extra={"status": application.status.value},
+        )
+    assessment = _record_affordability(
+        session, application, ctx, RunReason.STAFF_REQUEST, requested_by=ctx.user
+    )
+    session.commit()
+    return assessment
+
+
+def list_affordability(
+    session: Session, application_id: uuid.UUID, user: User
+) -> Sequence[AffordabilityAssessment]:
+    load(session, application_id, user)
+    return affordability.list_assessments(session, application_id)
+
+
+def get_affordability(
+    session: Session, application_id: uuid.UUID, assessment_id: uuid.UUID, user: User
+) -> AffordabilityAssessment:
+    load(session, application_id, user)
+    assessment = affordability.get_assessment(session, application_id, assessment_id)
+    if assessment is None:
+        raise NotFoundError("Affordability assessment not found")
+    return assessment
 
 
 def withdraw(
@@ -819,4 +966,27 @@ def profile_lock_reason(session: Session, applicant_id: uuid.UUID) -> str | None
     return (
         f"Your profile is locked while application {reference} is being reviewed. "
         "You can update it if the lender asks for more information."
+    )
+
+
+def repayment_schedule(
+    session: Session, application_id: uuid.UUID, user: User, *, disbursement_date: date
+) -> RepaymentSchedulePreview:
+    """The requested loan's schedule: under the frozen terms once submitted, else the
+    product's current terms. Illustrative only; no loan exists yet."""
+    application = load(session, application_id, user).application
+    if application.product_terms_snapshot:
+        return loans.preview_from_snapshot(
+            application.product_terms_snapshot,
+            application.requested_amount,
+            application.requested_term_months,
+            application.currency,
+            disbursement_date,
+        )
+    product = products.get_product(session, application.loan_product_id, include_inactive=True)
+    return loans.preview_for_product(
+        product,
+        application.requested_amount,
+        application.requested_term_months,
+        disbursement_date,
     )

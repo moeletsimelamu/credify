@@ -8,15 +8,17 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.orm import Session
 
-from app.core.clock import Clock, get_clock
+from app.core.clock import Clock, business_date, get_clock
 from app.core.db import get_session
 from app.core.deps import client_ip, if_match_version
 from app.core.pagination import Page, PageParams, page_params
+from app.modules.affordability.models import AffordabilityAssessment
+from app.modules.affordability.schemas import AffordabilityAssessmentRead
 from app.modules.applications import service
 from app.modules.applications.domain.state_machine import ApplicationStatus
 from app.modules.applications.models import (
@@ -46,6 +48,7 @@ from app.modules.applications.schemas import (
 from app.modules.identity.dependencies import get_current_user, require
 from app.modules.identity.models import User
 from app.modules.identity.permissions import Permission
+from app.modules.loans.schemas import RepaymentSchedulePreview
 
 router = APIRouter(prefix="/applications", tags=["applications"])
 
@@ -53,6 +56,7 @@ _own = require(Permission.APPLICATION_CREATE_OWN)
 _assign = require(Permission.APPLICATION_ASSIGN)
 _request_info = require(Permission.APPLICATION_REQUEST_INFO)
 _note = require(Permission.APPLICATION_NOTE)
+_run_affordability = require(Permission.AFFORDABILITY_RUN)
 
 
 def _ctx(request: Request, user: User, clock: Clock) -> service.Context:
@@ -174,6 +178,25 @@ def withdraw(
         _ctx(request, user, clock),
         reason=data.reason if data else None,
         expected_version=expected_version,
+    )
+    return _detail(session, application, user)
+
+
+@router.post("/{application_id}/resume-review", response_model=ApplicationDetail)
+def resume_review(
+    application_id: uuid.UUID,
+    request: Request,
+    expected_version: int | None = Depends(if_match_version),
+    session: Session = Depends(get_session),
+    clock: Clock = Depends(get_clock),
+    user: User = Depends(_own),
+) -> ApplicationDetail:
+    """Send the application back to the review queue once every request is answered.
+
+    The financial profile is re-assessed first, so reviewers see the updated figures.
+    """
+    application = service.resume_review(
+        session, application_id, _ctx(request, user, clock), expected_version=expected_version
     )
     return _detail(session, application, user)
 
@@ -339,3 +362,67 @@ def list_documents(
     user: User = Depends(get_current_user),
 ) -> Sequence[DocumentReference]:
     return service.list_documents(session, application_id, user)
+
+
+# --- Affordability and repayment schedule -------------------------------------------------
+
+
+@router.get(
+    "/{application_id}/affordability-assessments",
+    response_model=list[AffordabilityAssessmentRead],
+)
+def list_affordability_assessments(
+    application_id: uuid.UUID,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+) -> Sequence[AffordabilityAssessment]:
+    """Every version, newest first. Applicants see their own (the calculation is open)."""
+    return service.list_affordability(session, application_id, user)
+
+
+@router.post(
+    "/{application_id}/affordability-assessments",
+    response_model=AffordabilityAssessmentRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def run_affordability_assessment(
+    application_id: uuid.UUID,
+    request: Request,
+    session: Session = Depends(get_session),
+    clock: Clock = Depends(get_clock),
+    user: User = Depends(_run_affordability),
+) -> AffordabilityAssessment:
+    """Re-run on the applicant's current profile, creating a new version."""
+    return service.run_affordability(session, application_id, _ctx(request, user, clock))
+
+
+@router.get(
+    "/{application_id}/affordability-assessments/{assessment_id}",
+    response_model=AffordabilityAssessmentRead,
+)
+def get_affordability_assessment(
+    application_id: uuid.UUID,
+    assessment_id: uuid.UUID,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+) -> AffordabilityAssessment:
+    return service.get_affordability(session, application_id, assessment_id, user)
+
+
+@router.get("/{application_id}/repayment-schedule", response_model=RepaymentSchedulePreview)
+def get_repayment_schedule(
+    application_id: uuid.UUID,
+    disbursement_date: date | None = Query(
+        None, description="Defaults to today's business date (SAST)"
+    ),
+    session: Session = Depends(get_session),
+    clock: Clock = Depends(get_clock),
+    user: User = Depends(get_current_user),
+) -> RepaymentSchedulePreview:
+    """An illustrative schedule for the requested loan. Nothing is stored."""
+    return service.repayment_schedule(
+        session,
+        application_id,
+        user,
+        disbursement_date=disbursement_date or business_date(clock),
+    )

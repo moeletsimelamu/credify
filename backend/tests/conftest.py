@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import os
 import secrets
-import uuid
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -37,6 +36,7 @@ TEST_JWT_SECRET = secrets.token_urlsafe(48)
 DEFAULT_PASSWORD = "correct-horse-battery-staple"
 TABLES = (
     "audit_events",
+    "affordability_assessments",
     "refresh_tokens",
     "document_references",
     "information_requests",
@@ -345,30 +345,3 @@ def make_borrower(client: TestClient, make_party: Callable[..., Party]) -> Calla
 @pytest.fixture
 def borrower(make_borrower: Callable[..., Borrower]) -> Borrower:
     return make_borrower()
-
-
-def force_status(session: Session, application_id: str, status: str) -> None:
-    """Move an application to a status the API cannot reach yet.
-
-    SUBMITTED → PENDING_REVIEW requires a persisted affordability assessment (Phase 4), so
-    tests of the review workflow use this stand-in. It writes the same history row the
-    service would, through the ORM, never touching append-only rows.
-    """
-    from app.modules.applications.domain.state_machine import ApplicationStatus
-    from app.modules.applications.models import ApplicationStatusHistory, LoanApplication
-
-    application = session.get(LoanApplication, uuid.UUID(application_id))
-    assert application is not None
-    session.add(
-        ApplicationStatusHistory(
-            id=uuid7(),
-            application_id=application.id,
-            from_status=application.status,
-            to_status=ApplicationStatus(status),
-            reason="test fixture",
-            # Keep history in clock order: the test clock, not the database clock, applies.
-            created_at=application.submitted_at or datetime.now(UTC),
-        )
-    )
-    application.status = ApplicationStatus(status)
-    session.commit()

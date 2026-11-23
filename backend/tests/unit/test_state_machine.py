@@ -26,6 +26,7 @@ from app.modules.applications.domain.state_machine import (
     TransitionFacts,
     TransitionNotAllowedError,
     available_actions,
+    ensure_allowed,
     transition,
 )
 from app.modules.identity.roles import Role
@@ -278,13 +279,42 @@ def test_request_information_requires_a_message(message: str | None) -> None:
     assert _violations(S.UNDER_REVIEW, A.REQUEST_INFORMATION, ANALYST, message=message)
 
 
-def test_resume_review_guards() -> None:
-    assert _violations(
-        S.ADDITIONAL_INFO_REQUESTED, A.RESUME_REVIEW, OWNER, open_information_requests=1
+@pytest.mark.parametrize(
+    ("changes", "fragment"),
+    [
+        ({"open_information_requests": 1}, "answered"),
+        ({"employment_records": 0}, "employment"),
+        ({"income_records": 0}, "income"),
+        ({"expense_records": 0}, "expenses"),
+        ({"records_in_other_currencies": 1}, "loan currency"),
+        ({"assessments_refreshed": False}, "re-run"),
+    ],
+)
+def test_resume_review_guards(changes: dict[str, object], fragment: str) -> None:
+    violations = _violations(S.ADDITIONAL_INFO_REQUESTED, A.RESUME_REVIEW, OWNER, **changes)
+    assert len(violations) == 1
+    assert fragment in violations[0]
+
+
+def test_resume_review_reports_the_real_problem_before_a_stale_assessment() -> None:
+    # With an answer still missing, "re-run the assessment" would be misleading noise.
+    violations = _violations(
+        S.ADDITIONAL_INFO_REQUESTED,
+        A.RESUME_REVIEW,
+        OWNER,
+        open_information_requests=2,
+        assessments_refreshed=False,
     )
-    assert _violations(
-        S.ADDITIONAL_INFO_REQUESTED, A.RESUME_REVIEW, OWNER, assessments_refreshed=False
-    )
+    assert violations == ["all information requests must be answered first"]
+
+
+def test_ensure_allowed_checks_status_and_actor_only() -> None:
+    rule = ensure_allowed(S.ADDITIONAL_INFO_REQUESTED, A.RESUME_REVIEW, OWNER)
+    assert rule.target is S.PENDING_REVIEW
+    with pytest.raises(TransitionNotAllowedError):
+        ensure_allowed(S.UNDER_REVIEW, A.RESUME_REVIEW, OWNER)
+    with pytest.raises(ActorNotPermittedError):
+        ensure_allowed(S.ADDITIONAL_INFO_REQUESTED, A.RESUME_REVIEW, OFFICER)
 
 
 @pytest.mark.parametrize("action", [A.RECOMMEND_APPROVAL, A.RECOMMEND_REJECTION])

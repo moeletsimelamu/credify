@@ -1,6 +1,7 @@
 """Import every ORM model so ``Base.metadata`` is complete (used by Alembic and tests)."""
 
 from app.core.db import Base
+from app.modules.affordability.models import AffordabilityAssessment
 from app.modules.applicants.models import (
     Applicant,
     CreditCommitment,
@@ -20,6 +21,7 @@ from app.modules.identity.models import RefreshToken, User
 from app.modules.products.models import LoanProduct
 
 __all__ = [
+    "AffordabilityAssessment",
     "Applicant",
     "ApplicationStatusHistory",
     "AuditEvent",
