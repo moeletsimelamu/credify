@@ -37,6 +37,15 @@ def test_every_role_has_a_permission_set() -> None:
         (Role.APPLICANT, P.REPAYMENT_RECORD, False),
         (Role.APPLICANT, P.REPAYMENT_RECORD_OWN, True),
         (Role.APPLICANT, P.ANALYTICS_PORTFOLIO, False),
+        # Internal review notes are staff-only.
+        (Role.ADMIN, P.APPLICATION_NOTE, True),
+        (Role.LOAN_OFFICER, P.APPLICATION_NOTE, True),
+        (Role.CREDIT_ANALYST, P.APPLICATION_NOTE, True),
+        (Role.APPLICANT, P.APPLICATION_NOTE, False),
+        # Applicants write their own profile; staff only read profiles.
+        (Role.APPLICANT, P.APPLICANT_WRITE_OWN, True),
+        (Role.LOAN_OFFICER, P.APPLICANT_WRITE_OWN, False),
+        (Role.CREDIT_ANALYST, P.APPLICATION_ASSIGN, False),
     ],
 )
 def test_permission_matrix(role: Role, permission: Permission, expected: bool) -> None:

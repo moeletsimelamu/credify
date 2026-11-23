@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import ipaddress
 
-from fastapi import Request
+from fastapi import Header, Request
 
 from app.core.config import Settings
+from app.core.errors import DomainError
 
 
 def get_app_settings(request: Request) -> Settings:
@@ -28,3 +29,17 @@ def client_ip(request: Request) -> str | None:
 def user_agent(request: Request) -> str | None:
     value = request.headers.get("user-agent")
     return value[:300] if value else None
+
+
+def if_match_version(if_match: str | None = Header(None)) -> int | None:
+    """Optional optimistic-concurrency precondition: ``If-Match: "<version>"``.
+
+    Clients send the ``version`` they last read; a mismatch yields 409 instead of silently
+    overwriting someone else's change.
+    """
+    if if_match is None:
+        return None
+    raw = if_match.strip().removeprefix("W/").strip('"')
+    if not raw.isdigit():
+        raise DomainError('If-Match must contain the resource version, e.g. "3"')
+    return int(raw)

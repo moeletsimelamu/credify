@@ -2,23 +2,15 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from enum import StrEnum
 
 from sqlalchemy import CheckConstraint, DateTime, Enum, ForeignKey, Index, String, Text, true
 from sqlalchemy.dialects.postgresql import CITEXT
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base, CreatedAt, Timestamps, UUIDPrimaryKey
+from app.modules.identity.roles import STAFF_ROLES, Role
 
-
-class Role(StrEnum):
-    ADMIN = "ADMIN"
-    LOAN_OFFICER = "LOAN_OFFICER"
-    CREDIT_ANALYST = "CREDIT_ANALYST"
-    APPLICANT = "APPLICANT"
-
-
-STAFF_ROLES = frozenset({Role.ADMIN, Role.LOAN_OFFICER, Role.CREDIT_ANALYST})
+__all__ = ["STAFF_ROLES", "RefreshToken", "Role", "User"]
 
 
 class User(UUIDPrimaryKey, Timestamps, Base):

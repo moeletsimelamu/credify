@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-from app.modules.identity.models import Role
+from app.modules.identity.roles import Role
 
 
 class Permission(StrEnum):
@@ -21,6 +21,7 @@ class Permission(StrEnum):
     APPLICATION_READ_ANY = "application:read_any"
     APPLICATION_ASSIGN = "application:assign"
     APPLICATION_REQUEST_INFO = "application:request_info"
+    APPLICATION_NOTE = "application:note"
     APPLICATION_RECOMMEND = "application:recommend"
     APPLICATION_DECIDE = "application:decide"
     AFFORDABILITY_RUN = "affordability:run"
@@ -43,6 +44,7 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
             P.AUDIT_READ,
             P.APPLICANT_READ_ANY,
             P.APPLICATION_READ_ANY,
+            P.APPLICATION_NOTE,
             P.APPLICATION_ASSIGN,
             P.APPLICATION_DECIDE,
             P.LOAN_DISBURSE,
@@ -55,6 +57,7 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
         {
             P.APPLICANT_READ_ANY,
             P.APPLICATION_READ_ANY,
+            P.APPLICATION_NOTE,
             P.APPLICATION_ASSIGN,
             P.APPLICATION_REQUEST_INFO,
             P.APPLICATION_RECOMMEND,
@@ -68,6 +71,7 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
         {
             P.APPLICANT_READ_ANY,
             P.APPLICATION_READ_ANY,
+            P.APPLICATION_NOTE,
             P.APPLICATION_REQUEST_INFO,
             P.APPLICATION_DECIDE,
             P.AFFORDABILITY_RUN,

@@ -7,10 +7,11 @@ import uuid
 from collections.abc import Iterator
 from datetime import date, datetime
 from decimal import Decimal
+from enum import StrEnum
 from typing import Any
 
 from fastapi import Request
-from sqlalchemy import DateTime, MetaData, create_engine, func
+from sqlalchemy import DateTime, Enum, MetaData, Numeric, create_engine, func
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
@@ -43,6 +44,34 @@ class Timestamps(CreatedAt):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
     )
+
+
+def enum_type(enum_cls: type[StrEnum], name: str, *, length: int = 32) -> Enum:
+    """A StrEnum stored as VARCHAR + CHECK (DATABASE.md §1), never a native PG enum."""
+    return Enum(
+        enum_cls,
+        name=name,
+        native_enum=False,
+        create_constraint=True,
+        length=length,
+        validate_strings=True,
+        values_callable=lambda members: [member.value for member in members],
+    )
+
+
+def money_type() -> Numeric[Decimal]:
+    """NUMERIC(18,2) — amounts in a currency's minor-unit precision."""
+    return Numeric(18, 2)
+
+
+def rate_type() -> Numeric[Decimal]:
+    """NUMERIC(9,6) — annual rates as fractions."""
+    return Numeric(9, 6)
+
+
+def ratio_type() -> Numeric[Decimal]:
+    """NUMERIC(10,4) — ratios such as DTI thresholds."""
+    return Numeric(10, 4)
 
 
 def _json_default(value: Any) -> Any:

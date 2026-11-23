@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta, timezone
 from typing import Protocol
 
 from fastapi import Request
+
+# Calendar dates (eligibility, due dates) use South African Standard Time: the platform's
+# currency is ZAR (decision D1) and SAST has no daylight saving, so a fixed offset is exact.
+BUSINESS_TZ = timezone(timedelta(hours=2), "SAST")
 
 
 class Clock(Protocol):
@@ -32,6 +36,11 @@ class FixedClock:
         if instant.tzinfo is None:
             raise ValueError("FixedClock requires a timezone-aware datetime")
         self._instant = instant.astimezone(UTC)
+
+
+def business_date(clock: Clock) -> date:
+    """Today's calendar date in the business timezone."""
+    return clock.now().astimezone(BUSINESS_TZ).date()
 
 
 def get_clock(request: Request) -> Clock:
