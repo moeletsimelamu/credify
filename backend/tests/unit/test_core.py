@@ -57,6 +57,12 @@ class TestUuid7:
     def test_unique(self) -> None:
         assert len({uuid7() for _ in range(5_000)}) == 5_000
 
+    def test_strictly_increasing_within_a_millisecond(self) -> None:
+        # Far more ids than fit in one millisecond's counter: order must still hold.
+        ids = [uuid7() for _ in range(10_000)]
+        assert ids == sorted(ids)
+        assert len(set(ids)) == len(ids)
+
 
 def test_fixed_clock_requires_aware_datetimes() -> None:
     with pytest.raises(ValueError, match="timezone-aware"):
