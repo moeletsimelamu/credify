@@ -7,13 +7,23 @@ never send a value that has already been through binary floating point.
 
 from __future__ import annotations
 
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import ROUND_HALF_UP, Context, Decimal
 from enum import StrEnum
 from typing import Annotated, Any
 
 from pydantic import BeforeValidator, Field
 
 CENT = Decimal("0.01")
+RATIO_PLACES = Decimal("0.0001")
+
+# The arithmetic context every financial calculation runs in (FINANCIAL_CALCULATIONS.md §1):
+# 28 significant digits, half-up. Engines enter it with ``decimal.localcontext``, so results
+# never depend on whatever context the calling thread happens to have.
+FINANCIAL_CONTEXT = Context(prec=28, rounding=ROUND_HALF_UP)
+
+
+class CurrencyMismatchError(ValueError):
+    """Amounts in different currencies were combined. Credify never converts currencies."""
 
 
 class Currency(StrEnum):
@@ -31,6 +41,11 @@ DEFAULT_CURRENCY = Currency.ZAR
 def quantize_money(value: Decimal) -> Decimal:
     """Round to cents, half away from zero (FINANCIAL_CALCULATIONS.md §1)."""
     return value.quantize(CENT, rounding=ROUND_HALF_UP)
+
+
+def quantize_ratio(value: Decimal) -> Decimal:
+    """Round a ratio to four decimal places, half up (FINANCIAL_CALCULATIONS.md §1)."""
+    return value.quantize(RATIO_PLACES, rounding=ROUND_HALF_UP)
 
 
 def _reject_float(value: Any) -> Any:

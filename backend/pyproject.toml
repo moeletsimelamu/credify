@@ -25,6 +25,8 @@ dev = [
     "httpx>=0.28",
     "ruff>=0.8",
     "mypy>=1.13",
+    "hypothesis>=6.170.17",
+    "numpy-financial>=1.0.0",
 ]
 
 [tool.uv]
@@ -60,6 +62,10 @@ plugins = ["pydantic.mypy"]
 strict = true
 warn_unreachable = true
 exclude = ["migrations/"]
+
+[[tool.mypy.overrides]]
+module = ["numpy_financial"]  # test-only dependency without type information
+ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = ["tests.*"]
