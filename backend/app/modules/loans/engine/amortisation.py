@@ -175,3 +175,54 @@ def build_schedule(terms: LoanTerms, disbursement_date: date) -> Schedule:
         level_instalment=level,
         instalments=tuple(rows),
     )
+
+
+def recast(
+    balance: Decimal,
+    *,
+    annual_interest_rate: Decimal,
+    level: Decimal,
+    first_number: int,
+    disbursement_date: date,
+    monthly_service_fee: Decimal = ZERO,
+) -> tuple[Instalment, ...]:
+    """Re-amortise ``balance`` after a prepayment (FINANCIAL_CALCULATIONS.md §5).
+
+    The instalment amount stays ``level`` and the term shortens: rows continue from
+    ``first_number`` on the original due-date pattern until the balance clears. The last
+    row takes whatever is left, so the balance closes at exactly 0.00.
+    """
+    if balance <= 0 or not _is_cents(balance):
+        raise ScheduleError("the balance to recast must be a positive amount in whole cents")
+    if first_number < 1:
+        raise ScheduleError("instalment numbers start at 1")
+    with localcontext(FINANCIAL_CONTEXT):
+        rate = monthly_rate(annual_interest_rate)
+        rows: list[Instalment] = []
+        number = first_number
+        while balance > 0:
+            if len(rows) >= MAX_TERM_MONTHS:
+                raise ScheduleError("the balance cannot be repaid with this instalment")
+            interest = quantize_money(balance * rate)
+            final = balance + interest <= level
+            principal_part = balance if final else level - interest
+            if principal_part <= 0:
+                raise ScheduleError("the instalment no longer covers the interest")
+            instalment = interest + principal_part
+            closing = balance - principal_part
+            rows.append(
+                Instalment(
+                    number=number,
+                    due_date=add_months(disbursement_date, number),
+                    opening_balance=balance,
+                    instalment=instalment,
+                    interest=interest,
+                    principal=principal_part,
+                    service_fee=monthly_service_fee,
+                    total_due=instalment + monthly_service_fee,
+                    closing_balance=closing,
+                )
+            )
+            balance = closing
+            number += 1
+    return tuple(rows)
