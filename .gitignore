@@ -5,6 +5,7 @@
 *.pem
 *.key
 demo-credentials*.txt
+.local/
 
 # Python
 __pycache__/
