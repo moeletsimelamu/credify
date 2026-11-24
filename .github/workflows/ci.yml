@@ -50,6 +50,34 @@ jobs:
       - name: Tests
         run: uv run pytest --cov=app --cov-report=term-missing
 
+  ml:
+    name: ML (lint, types, tests, reproducibility)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ml
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install uv
+        run: pip install uv==0.13.9
+      - name: Install dependencies
+        run: uv sync --frozen
+      - name: Ruff lint
+        run: uv run ruff check .
+      - name: Ruff format
+        run: uv run ruff format --check .
+      - name: Mypy (strict)
+        run: uv run mypy credify_ml tests
+      - name: Tests
+        run: uv run pytest
+      - name: Generate the dataset (seed 20261118)
+        run: uv run python -m credify_ml.generate
+      - name: Reproduce the committed training metrics
+        run: uv run python -m credify_ml.train --check
+
   secrets-scan:
     name: Secrets scan (gitleaks)
     runs-on: ubuntu-latest

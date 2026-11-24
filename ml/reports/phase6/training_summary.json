@@ -1,0 +1,180 @@
+{
+  "comparison": {
+    "gbm_materially_better": false,
+    "gbm_minus_lr_brier": 0.000709,
+    "gbm_minus_lr_roc_auc": -0.002573,
+    "provisional_choice": "logistic_regression",
+    "rule": "Serve logistic regression unless gradient boosting is materially better: ROC-AUC +0.02 and a lower Brier score (approved decision D4).",
+    "status": "provisional: confirmed in Phase 7 after calibration and the one-off test-set evaluation"
+  },
+  "dataset": {
+    "content_sha256": "d75655dceeb35cb6dbdc5f2d9b7ceb684a87ca86c1beb283d41c8c661e5c289e",
+    "default_rate": 0.11734,
+    "generator_version": "synthgen-1.0.0",
+    "rows": 50000,
+    "seed": 20261118
+  },
+  "dgp_oracle_validation": {
+    "brier": 0.094118,
+    "log_loss": 0.326129,
+    "mean_predicted": 0.113074,
+    "observed_rate": 0.117333,
+    "pr_auc": 0.304256,
+    "roc_auc": 0.72169
+  },
+  "feature_schema_version": "features-1.0.0",
+  "features": [
+    "gross_monthly_income",
+    "net_monthly_income",
+    "employment_type",
+    "employment_tenure_months",
+    "living_expenses_applied",
+    "existing_debt_instalments",
+    "num_credit_accounts",
+    "revolving_utilisation",
+    "missed_payments_12m",
+    "months_since_delinquency",
+    "requested_amount",
+    "term_months",
+    "loan_purpose",
+    "debt_to_income",
+    "repayment_burden",
+    "residual_income",
+    "loan_to_income"
+  ],
+  "libraries": {
+    "numpy": "2.5.5",
+    "pandas": "3.1.1",
+    "scikit-learn": "1.9.1"
+  },
+  "models": {
+    "baseline": {
+      "artefact": {
+        "note": "git-ignored; reproducible from the dataset. The SHA-256 depends on library versions, so the reproducibility check compares metrics, not artefact bytes.",
+        "path": "artefacts/baseline-d75655dceeb3/model.joblib",
+        "sha256": "96da0a157ec35bde8464b0143286f3deaae9d7457f1a44992b50cb33327b3dac"
+      },
+      "best_params": {},
+      "cv": null,
+      "description": "Prior-rate model: predicts the training default rate for everyone (sanity floor)",
+      "fit_seconds": 0.0,
+      "validation": {
+        "brier": 0.103566,
+        "log_loss": 0.361578,
+        "mean_predicted": 0.117343,
+        "observed_rate": 0.117333,
+        "pr_auc": 0.117333,
+        "roc_auc": 0.5
+      }
+    },
+    "hist_gradient_boosting": {
+      "artefact": {
+        "note": "git-ignored; reproducible from the dataset. The SHA-256 depends on library versions, so the reproducibility check compares metrics, not artefact bytes.",
+        "path": "artefacts/hist_gradient_boosting-d75655dceeb3/model.joblib",
+        "sha256": "5ae316ccddce44d52439954a1befc87d1cee7e57190d06755faaca27c41958b8"
+      },
+      "best_params": {
+        "model__l2_regularization": 0.0,
+        "model__learning_rate": 0.05,
+        "model__max_leaf_nodes": 15
+      },
+      "cv": {
+        "brier_mean": 0.097188,
+        "combinations": 8,
+        "folds": 5,
+        "grid": {
+          "model__l2_regularization": [
+            "0.0",
+            "1.0"
+          ],
+          "model__learning_rate": [
+            "0.05",
+            "0.1"
+          ],
+          "model__max_leaf_nodes": [
+            "15",
+            "31"
+          ]
+        },
+        "log_loss_mean": 0.335746,
+        "roc_auc_mean": 0.689434,
+        "roc_auc_std": 0.006314,
+        "selection_metric": "roc_auc"
+      },
+      "description": "Histogram gradient boosting with native missing-value and categorical handling",
+      "fit_seconds": 21.3,
+      "validation": {
+        "brier": 0.097563,
+        "log_loss": 0.337688,
+        "mean_predicted": 0.118329,
+        "observed_rate": 0.117333,
+        "pr_auc": 0.24876,
+        "roc_auc": 0.681386
+      }
+    },
+    "logistic_regression": {
+      "artefact": {
+        "note": "git-ignored; reproducible from the dataset. The SHA-256 depends on library versions, so the reproducibility check compares metrics, not artefact bytes.",
+        "path": "artefacts/logistic_regression-d75655dceeb3/model.joblib",
+        "sha256": "d6ac27242eb9495d452b95a067f5e0ee1af7187e64b1d5fd87355cfe3f8a35b0"
+      },
+      "best_params": {
+        "model__C": 0.01,
+        "model__class_weight": null
+      },
+      "cv": {
+        "brier_mean": 0.096473,
+        "combinations": 12,
+        "folds": 5,
+        "grid": {
+          "model__C": [
+            "0.001",
+            "0.003",
+            "0.01",
+            "0.03",
+            "0.1",
+            "1.0"
+          ],
+          "model__class_weight": [
+            "None",
+            "balanced"
+          ]
+        },
+        "log_loss_mean": 0.333258,
+        "roc_auc_mean": 0.696113,
+        "roc_auc_std": 0.00708,
+        "selection_metric": "roc_auc"
+      },
+      "description": "L2-regularised logistic regression on imputed, log-transformed, scaled features",
+      "fit_seconds": 9.5,
+      "validation": {
+        "brier": 0.096854,
+        "log_loss": 0.335772,
+        "mean_predicted": 0.118047,
+        "observed_rate": 0.117333,
+        "pr_auc": 0.261935,
+        "roc_auc": 0.683959
+      }
+    }
+  },
+  "quick": false,
+  "split": {
+    "test": {
+      "default_rate": 0.117333,
+      "ids_sha256": "11705fd43325cbaa90e59f98f266e17cc87364e91f6b26c31976f57b2d9f5126",
+      "rows": 7500
+    },
+    "train": {
+      "default_rate": 0.117343,
+      "ids_sha256": "c098a96d9cb9d6e315211fedbb2a7c5d4ae93782f0c522593c0c1b203be96b96",
+      "rows": 35000
+    },
+    "validation": {
+      "default_rate": 0.117333,
+      "ids_sha256": "99bcee8ace57d13b8e1e63d6b1ed0002c89b55ae714eba13f143a1c4f87b1d7c",
+      "rows": 7500
+    }
+  },
+  "test_set_used": false,
+  "trainer_version": "trainer-1.0.0"
+}
