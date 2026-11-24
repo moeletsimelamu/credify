@@ -12,7 +12,8 @@
 | 2 | Backend foundation, database, authentication | ✅ Implemented |
 | 3 | Applicants, loan products, loan applications and review workflow | ✅ Implemented |
 | 4 | Affordability and repayment engines, versioned affordability assessments, schedule previews | ✅ Implemented |
-| 5–10 | See [docs/ROADMAP.md](docs/ROADMAP.md) | Planned |
+| 5 | Recommendations, maker–checker decisions, loan accounts, repayments, arrears, early settlement, portfolio analytics, demo seed | ✅ Implemented |
+| 6–10 | See [docs/ROADMAP.md](docs/ROADMAP.md) | Planned |
 
 ## Documentation
 
@@ -42,6 +43,24 @@ docker compose exec api python -m app.cli create-admin --email admin@example.com
 
 The API is at <http://127.0.0.1:8000> — interactive docs at <http://127.0.0.1:8000/docs>, readiness at `/health/ready`.
 
+### Demo data
+
+Instead of creating an admin by hand, you can load the deterministic synthetic demo book (staff for every role, three products, 40 applicants with applications in every status, and 15 loan accounts with on-time, late, in-arrears, prepaid and settled histories):
+
+```bash
+docker compose run --rm seed
+```
+
+Add `--reset` to replace data that is already there, `--seed N` for a different but still reproducible book, or `--as-of YYYY-MM-DD` to choose the demo's "today". Passwords are generated on each run and written to `.local/demo-credentials.txt`, which is git-ignored. Every address uses the reserved `credify-demo.example` domain.
+
+### Arrears job
+
+Late fees, instalment statuses and each loan's arrears position are brought up to date by a daily job. Run it on demand, optionally for a later date to simulate the passage of time:
+
+```bash
+docker compose exec api python -m scripts.run_arrears_job --as-of 2027-01-31
+```
+
 ## Backend development
 
 Prerequisites: [uv](https://docs.astral.sh/uv/) (it installs Python 3.12 for you) and the database container.
@@ -65,7 +84,7 @@ uv run uvicorn --factory app.main:create_app --reload
 ### Checks
 
 ```bash
-uv run ruff check . && uv run ruff format --check . && uv run mypy app tests
+uv run ruff check . && uv run ruff format --check . && uv run mypy app tests scripts
 ```
 
 ```bash

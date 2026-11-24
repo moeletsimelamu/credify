@@ -172,12 +172,19 @@ Repayments are simulated (no payment provider). Each repayment has an amount, a 
 
 Interest is schedule-based: paying early or late within a period does not change that period's interest. This is a deliberate simplification.
 
+*Implementation notes (Phase 5):*
+
+- "Overdue" means due *before* the value date; step 5 covers instalments due *on* it. Steps 2–4 run component by component across every overdue instalment (all overdue fees, then all overdue interest, then all overdue principal), oldest first.
+- Money paid before an instalment's due date is therefore a prepayment, as written above. A payment whose prepayment would clear all principal not yet due is refused: the borrower settles through the quote in §7 instead.
+- The recast keeps the level instalment `A`: from the first instalment not yet due, `interest = q(B · r)`, `principal = A − interest`, until `B + interest ≤ A`, which becomes the final instalment. Due dates keep the original pattern. The recast version replaces every instalment from that number on; earlier rows (all fully paid) stay as they were.
+- Arrears are brought up to date for the value date (late fees charged) before a payment is allocated.
+
 ## 6. Arrears and late payments
 
 - An instalment becomes `OVERDUE` when `today > due_date` and it is not fully paid.
 - **Days past due** `DPD = today − due_date of the oldest unpaid instalment` (0 if none).
 - **Arrears amount** = Σ unpaid `total_due` of overdue instalments + unpaid charges.
-- **Late fee:** if an instalment remains unpaid `grace_period_days` after its due date, one `LATE_FEE` of the product's fixed amount is charged (unique per instalment — never charged twice). No penalty interest in v1.
+- **Late fee:** if an instalment remains unpaid `grace_period_days` after its due date, one `LATE_FEE` of the product's fixed amount is charged (unique per instalment — never charged twice). No penalty interest in v1. The fee is charged on `due_date + grace_period_days + 1` (the first day after the grace period) and dated that day however late the job runs; a partly paid instalment still counts as unpaid. A zero `late_fee` charges nothing.
 - **Buckets** for reporting: `CURRENT`, `1–30`, `31–60`, `61–90`, `90+` DPD.
 - Loan status is `IN_ARREARS` while `DPD > 0`, back to `ACTIVE` once cleared.
 - The arrears job takes the date as an explicit argument (or an injected clock) so tests and demos can simulate the passage of time ("late payment simulation").
@@ -196,6 +203,13 @@ settlement       = outstanding_principal + accrued_interest
 
 A quote is valid for the date it is generated for. Paying the quoted amount on that date settles the loan (`SETTLED`), and any remaining scheduled instalments are cancelled in the current schedule version.
 
+*Clarifications (Phase 5):*
+
+- `t` is the latest due date on or before `d` (the disbursement date if none has passed), not the last *paid* due date. Accrued interest is charged on principal **not yet due** only; principal already due is counted once, in the arrears, so it does not attract interest twice. With nothing overdue this equals the formula above.
+- The settlement fee is charged on all outstanding principal, as a `CHARGE` (`EARLY_SETTLEMENT_FEE`) recorded just before the settlement payment.
+- Unpaid charges include late fees that will have become chargeable by `d`, so a quote for a future date is exact if nothing else is paid before then.
+- Allocation: everything due and all charges go through the §5 waterfall; accrued interest is applied to the first instalment not yet due (it never exceeds that instalment's scheduled interest, because `d − t ≤ 30` days and 30/365 < 1/12); each remaining instalment's principal is repaid, and those instalments become `CANCELLED`.
+
 Example (from worked example B): after instalment 3 the balance is 26,910.96; settling 17 days later accrues `q(26,910.96 × 0.215 × 17 / 365) = 269.48` interest before fees.
 
 ## 8. Portfolio figures
@@ -206,6 +220,7 @@ Example (from worked example B): after instalment 3 the balance is 26,910.96; se
 | Total principal disbursed | Σ `principal` of loan accounts disbursed in the period |
 | Outstanding principal | Σ cached `outstanding_principal` of `ACTIVE` + `IN_ARREARS` accounts (reconciled nightly against the transaction log) |
 | Arrears rate | outstanding principal of `IN_ARREARS` accounts ÷ total outstanding principal |
-| Collection rate | Σ repayments received ÷ Σ amounts due, for instalments due in the period |
+| Collection rate | Σ paid ÷ Σ `total_due`, for instalments of the effective schedule due in the period and not after today; cancelled instalments of settled loans are excluded |
+| Repayments received | Σ `REPAYMENT` + `SETTLEMENT` transactions by value date in the period |
 
 Portfolio totals are summed per currency and never across currencies.

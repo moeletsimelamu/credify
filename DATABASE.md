@@ -184,7 +184,7 @@ Partial unique index: `UNIQUE (name) WHERE status = 'ACTIVE'` — exactly one ac
 
 **`credit_risk_assessments`** *(append-only)* — `id`, `application_id`, `version` (`UNIQUE (application_id, version)`), `model_version_id FK`, `feature_snapshot JSONB` (exact model inputs), `probability_of_default NUMERIC(7,6)`, `risk_band` (`A`–`E`), `explanation JSONB` (per-feature contributions, base value), `status` (`SCORED`, `FAILED`), `failure_reason NULL`, `requested_by NULL`, `created_at`.
 
-**`recommendations`** *(append-only)* — `id`, `application_id`, `recommended_by`, `recommendation` (`APPROVE`, `REJECT`), `rationale`, `affordability_assessment_id FK`, `credit_risk_assessment_id FK NULL`, `created_at`.
+**`recommendations`** *(append-only)* — `id`, `application_id`, `recommended_by`, `recommendation` (`APPROVE`, `REJECT`), `rationale` (`CHECK` ≥ 20 non-blank characters), `affordability_assessment_id FK` (must be the latest version when recorded), `created_at`. Index on `(application_id, created_at)`; the latest row is the one a decision responds to. `credit_risk_assessment_id FK NULL` is added in Phase 7 with the risk table.
 
 **`lending_decisions`** *(append-only)*
 | Column | Type | Notes |
@@ -193,43 +193,56 @@ Partial unique index: `UNIQUE (name) WHERE status = 'ACTIVE'` — exactly one ac
 | decision | TEXT | `APPROVED`, `DECLINED` |
 | decided_by FK users | | `CHECK`-equivalent service rule: ≠ recommendation author |
 | recommendation_id FK | | Recommendation the decision responds to |
-| affordability_assessment_id, credit_risk_assessment_id | FK | Evidence actually reviewed |
-| reason_codes | TEXT[] | From a controlled list (e.g. `AFFORDABILITY_SHORTFALL`, `HIGH_DTI`, `ADVERSE_REPAYMENT_HISTORY`, `INSUFFICIENT_INCOME_EVIDENCE`, `MEETS_CRITERIA`) |
-| explanation | TEXT | Human-written, required |
+| affordability_assessment_id | FK | Evidence actually reviewed (must be the latest version) |
+| reason_codes | TEXT[] | `CHECK (cardinality >= 1)`. From the controlled list in `decisions/domain/reason_codes.py`; each code supports either an approval or a decline, and the guard rejects codes that do not match the decision |
+| explanation | TEXT | Human-written, required, internal (applicants see the codes' plain-language text instead) |
 | model_acknowledged | BOOLEAN | `CHECK (model_acknowledged)` |
-| departs_from_model | BOOLEAN | Decision differs from model band guidance |
-| approved_amount, approved_term_months | NULL | May be lower than requested (counter-offer) |
+| departs_from_recommendation | BOOLEAN | The decision differs from the recommendation it responds to |
+| approved_amount, approved_term_months | NULL | Set exactly when `decision = 'APPROVED'` (`CHECK`). A counter-offer may lower the amount or change the term, must cite `COUNTER_OFFER`, and may not cost more per month than the assessed instalment |
 | created_at | | |
+
+`credit_risk_assessment_id` and `departs_from_model` are added in Phase 7, when there is a model output to compare with.
 
 ### 3.6 Loans and repayments
 
 **`loan_accounts`**
 | Column | Type | Notes |
 |---|---|---|
-| id, account_number (UNIQUE) | | |
-| application_id FK UNIQUE | | |
-| principal | NUMERIC(18,2) | Approved amount + capitalised initiation fee |
+| id, account_number (UNIQUE) | | `LA-<n>` from `loan_account_number_seq`, six digits |
+| application_id FK UNIQUE, decision_id FK UNIQUE | | One account per approval (this is what makes disbursement idempotent) |
+| applicant_id FK | | Indexed; used for applicant scoping |
+| approved_amount, initiation_fee | NUMERIC(18,2) | From the decision and the frozen product terms |
+| principal | NUMERIC(18,2) | `CHECK (principal = approved_amount + initiation_fee)` |
 | currency | CHAR(3) | |
 | annual_interest_rate | NUMERIC(9,6) | Snapshot |
-| term_months | SMALLINT | |
+| term_months | SMALLINT | Contractual term (a recast shortens the schedule, not this) |
 | instalment_amount | NUMERIC(18,2) | Amortising instalment, excl. service fee |
-| monthly_service_fee | NUMERIC(18,2) | |
-| disbursed_on, first_due_date, maturity_date | DATE | |
-| status | TEXT | `PENDING_DISBURSEMENT`, `ACTIVE`, `IN_ARREARS`, `SETTLED`, `CLOSED` |
+| monthly_service_fee, late_fee | NUMERIC(18,2) | Snapshot |
+| grace_period_days | SMALLINT | Snapshot |
+| early_settlement_fee_rate | NUMERIC(9,6) | Snapshot |
+| disbursed_on, first_due_date, maturity_date | DATE | `maturity_date` moves earlier after a prepayment recast |
+| status | TEXT | `PENDING_DISBURSEMENT` (reserved; simulated disbursement is immediate), `ACTIVE`, `IN_ARREARS`, `SETTLED`, `CLOSED` |
 | outstanding_principal, arrears_amount | NUMERIC(18,2) | Cached; reconciled from `loan_transactions` |
 | days_past_due | INTEGER | Cached |
+| position_as_of | DATE | The date the cached figures were calculated for |
 | version_id | INTEGER | Optimistic lock |
-| settled_on | DATE NULL | |
+| settled_on | DATE NULL | `CHECK ((status = 'SETTLED') = (settled_on IS NOT NULL))` |
 
-**`repayment_schedules`** — `id`, `loan_account_id`, `version` (`UNIQUE (loan_account_id, version)`), `reason` (`ORIGINATION`, `PREPAYMENT_RECAST`), `is_current BOOLEAN`, `created_at`. Partial unique index: one current schedule per loan.
+**`repayment_schedules`** — `id`, `loan_account_id`, `version` (`UNIQUE (loan_account_id, version)`), `reason` (`ORIGINATION`, `PREPAYMENT_RECAST`), `engine_version`, `first_instalment_number`, `is_current BOOLEAN`, `transaction_id FK NULL` (the repayment whose prepayment caused the recast), `created_at`. Partial unique index: one current schedule per loan.
 
-**`schedule_instalments`** — `id`, `schedule_id`, `instalment_number` (`UNIQUE (schedule_id, instalment_number)`), `due_date`, `opening_balance`, `interest_due`, `principal_due`, `service_fee_due`, `total_due`, `closing_balance`, `interest_paid`, `principal_paid`, `service_fee_paid`, `status` (`SCHEDULED`, `DUE`, `PARTIALLY_PAID`, `PAID`, `OVERDUE`). `CHECK (interest_paid <= interest_due AND principal_paid <= principal_due AND service_fee_paid <= service_fee_due)`.
+The **effective schedule** is built version by version: each version replaces every instalment from its `first_instalment_number` on. A recast only ever replaces instalments nothing has been paid against, so earlier versions' rows stay valid and history is never rewritten.
 
-**`loan_charges`** — `id`, `loan_account_id`, `schedule_instalment_id NULL`, `charge_type` (`LATE_FEE`, `EARLY_SETTLEMENT_FEE`), `amount`, `amount_paid`, `charged_on`, `created_at`. `UNIQUE (schedule_instalment_id, charge_type)` prevents double late fees.
+**`schedule_instalments`** — `id`, `schedule_id`, `instalment_number` (`UNIQUE (schedule_id, instalment_number)`), `due_date`, `opening_balance`, `interest_due`, `principal_due`, `service_fee_due`, `total_due`, `closing_balance`, `interest_paid`, `principal_paid`, `service_fee_paid`, `status` (`SCHEDULED`, `DUE`, `PARTIALLY_PAID`, `PAID`, `OVERDUE`, `CANCELLED`). `CHECK (interest_paid <= interest_due AND principal_paid <= principal_due AND service_fee_paid <= service_fee_due)`, `CHECK (total_due = interest_due + principal_due + service_fee_due)`, `CHECK (closing_balance = opening_balance - principal_due)`. `CANCELLED` marks the remaining instalments of a loan settled early: their principal was repaid by the settlement and their scheduled interest and fees are no longer owed.
 
-**`loan_transactions`** *(append-only — the account statement)* — `id`, `loan_account_id`, `transaction_type` (`DISBURSEMENT`, `REPAYMENT`, `CHARGE`, `SETTLEMENT`, `REVERSAL`), `amount CHECK (> 0)`, `currency`, `value_date DATE`, `idempotency_key UNIQUE NULL`, `channel` (`SIMULATED`), `reference`, `reverses_transaction_id NULL`, `recorded_by NULL`, `balance_after NUMERIC(18,2)`, `created_at`.
+**`loan_charges`** — `id`, `loan_account_id`, `schedule_instalment_id NULL`, `charge_type` (`LATE_FEE`, `EARLY_SETTLEMENT_FEE`), `amount`, `amount_paid`, `charged_on`, `created_at`. `UNIQUE (schedule_instalment_id, charge_type)` prevents double late fees; `CHECK ((charge_type = 'LATE_FEE') = (schedule_instalment_id IS NOT NULL))`; `CHECK (0 <= amount_paid <= amount)`.
 
-**`payment_allocations`** *(append-only)* — `id`, `transaction_id FK`, `schedule_instalment_id NULL`, `loan_charge_id NULL`, `component` (`CHARGE`, `SERVICE_FEE`, `INTEREST`, `PRINCIPAL`, `PREPAYMENT`), `amount CHECK (> 0)`. Sum of allocations = transaction amount (verified in service + tested).
+**`loan_transactions`** *(append-only — the account statement)* — `id`, `loan_account_id`, `transaction_type` (`DISBURSEMENT`, `REPAYMENT`, `CHARGE`, `SETTLEMENT`, `REVERSAL`), `amount CHECK (> 0)`, `currency`, `value_date DATE`, `idempotency_key UNIQUE NULL`, `channel` (`SIMULATED`), `reference`, `reverses_transaction_id NULL`, `recorded_by NULL` (NULL = the arrears job), `balance_after NUMERIC(18,2)`, `created_at`. Index on `(loan_account_id, value_date)`.
+
+- `balance_after` is what the borrower owes as at the value date once the transaction is applied: outstanding principal + interest and service fees due by then + unpaid charges. It is computed before the row is written, because the row can never be updated.
+- `DISBURSEMENT` is for the principal financed (the capitalised initiation fee is named in its reference). Late fees and the early settlement fee each appear as a `CHARGE`.
+- `REVERSAL` is reserved; v1 has no reversal endpoint.
+
+**`payment_allocations`** *(append-only)* — `id`, `transaction_id FK`, `schedule_instalment_id NULL`, `loan_charge_id NULL`, `component` (`CHARGE`, `SERVICE_FEE`, `INTEREST`, `PRINCIPAL`, `PREPAYMENT`), `amount CHECK (> 0)`. `CHECK`s tie the target to the component: a `CHARGE` names a charge, `SERVICE_FEE`/`INTEREST`/`PRINCIPAL` name an instalment, `PREPAYMENT` names neither. Sum of allocations = transaction amount (verified by `loans.service.reconcile`, which the arrears job runs on every account, and by tests).
 
 ### 3.7 Audit
 
@@ -246,7 +259,7 @@ Partial unique index: `UNIQUE (name) WHERE status = 'ACTIVE'` — exactly one ac
 
 Two distinct synthetic datasets (never mixed):
 
-1. **Demo seed** (`backend/scripts/seed_demo_data.py`, deterministic seed): staff users for each role, 3 loan products, ~40 applicants, applications across every status, ~15 loan accounts with repayment histories including on-time, late and settled loans — so every screen has realistic content.
+1. **Demo seed** (`backend/scripts/seed_demo_data.py`, deterministic for a given `--seed` and `--as-of`): 5 staff users (admin, two loan officers, two credit analysts), 3 loan products, 40 applicants with applications in every status except the transient `SUBMITTED`, and 15 loan accounts with on-time, late (with late fees), in-arrears (three ageing buckets), prepaid (recast schedule) and settled histories. It drives the same service functions as the API with a simulated clock, so every row obeys the business rules and has an audit trail. It refuses to run in production or on a database that already has users (unless `--reset`).
 2. **ML training dataset** — generated offline by `ml/`; see `docs/ML_STRATEGY.md`.
 
-Demo credentials are generated at seed time and written to a git-ignored local file, never committed.
+Demo credentials are generated at seed time and written to a git-ignored local file (`.local/demo-credentials.txt` under Compose), never committed. Every demo address uses the reserved `credify-demo.example` domain.
