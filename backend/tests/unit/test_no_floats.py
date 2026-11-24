@@ -17,6 +17,7 @@ FINANCIAL_PACKAGES = (
     APP / "modules" / "affordability" / "domain",
     APP / "modules" / "applicants" / "domain",
     APP / "modules" / "applications" / "domain",
+    APP / "modules" / "decisions" / "domain",
 )
 SOURCES = sorted(path for package in FINANCIAL_PACKAGES for path in package.rglob("*.py"))
 
@@ -40,7 +41,7 @@ def _float_uses(path: Path) -> list[str]:
 
 def test_packages_exist() -> None:
     assert all(package.is_dir() for package in FINANCIAL_PACKAGES)
-    assert len(SOURCES) >= 8
+    assert len(SOURCES) >= 14
 
 
 @pytest.mark.parametrize("path", SOURCES, ids=lambda p: str(p.relative_to(APP)))

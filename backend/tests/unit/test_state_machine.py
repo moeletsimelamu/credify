@@ -97,11 +97,19 @@ PASSING = TransitionFacts(
     assessments_refreshed=True,
     rationale="Residual income comfortably covers the instalment.",
     reviewed_affordability_version=1,
+    latest_affordability_version=1,
     recommender_id=OFFICER_ID,
-    reason_codes=("AFFORDABLE",),
+    reason_codes=("MEETS_CRITERIA",),
     explanation="Affordability and the advisory risk band both support approval.",
     model_output_acknowledged=True,
 )
+
+
+def _facts(action: Action) -> TransitionFacts:
+    """PASSING, with reason codes that support the decision being made."""
+    if action is A.DECLINE:
+        return replace(PASSING, reason_codes=("HIGH_DTI",))
+    return PASSING
 
 
 def test_expected_table_matches_rules() -> None:
@@ -116,11 +124,11 @@ def test_every_status_action_pair(status: ApplicationStatus, action: Action) -> 
     expected = EXPECTED.get((status, action))
     if expected is None:
         with pytest.raises(TransitionNotAllowedError) as excinfo:
-            transition(status, action, VALID_ACTOR[action], PASSING)
+            transition(status, action, VALID_ACTOR[action], _facts(action))
         assert excinfo.value.status is status
         assert excinfo.value.action is action
     else:
-        result = transition(status, action, VALID_ACTOR[action], PASSING)
+        result = transition(status, action, VALID_ACTOR[action], _facts(action))
         assert (result.source, result.target, result.action) == (status, expected, action)
 
 
@@ -182,9 +190,9 @@ ALLOWED_ACTORS: dict[Action, set[str]] = {
 def test_actor_permissions(action: Action, actor_name: str) -> None:
     status = next(iter(sorted(RULES[action].sources)))
     actor = ALL_ACTORS[actor_name]
-    facts = PASSING
+    facts = _facts(action)
     if action in {A.APPROVE, A.DECLINE}:
-        facts = replace(PASSING, recommender_id=OTHER_OFFICER_ID)  # not the decider
+        facts = replace(facts, recommender_id=OTHER_OFFICER_ID)  # not the decider
     if action is A.START_REVIEW and actor.user_id:
         facts = replace(PASSING, assigned_officer_id=actor.user_id)
     if actor_name in ALLOWED_ACTORS[action]:
@@ -216,7 +224,7 @@ def _violations(
     status: ApplicationStatus, action: Action, actor: Actor, **changes: object
 ) -> list[str]:
     with pytest.raises(GuardViolationError) as excinfo:
-        transition(status, action, actor, replace(PASSING, **changes))  # type: ignore[arg-type]
+        transition(status, action, actor, replace(_facts(action), **changes))  # type: ignore[arg-type]
     return excinfo.value.violations
 
 
@@ -320,6 +328,10 @@ def test_ensure_allowed_checks_status_and_actor_only() -> None:
 @pytest.mark.parametrize("action", [A.RECOMMEND_APPROVAL, A.RECOMMEND_REJECTION])
 def test_recommend_guards(action: Action) -> None:
     assert _violations(S.UNDER_REVIEW, action, OFFICER, reviewed_affordability_version=None)
+    stale = _violations(S.UNDER_REVIEW, action, OFFICER, latest_affordability_version=2)
+    assert stale == ["review the latest affordability assessment (version 2) before recommending"]
+    missing = _violations(S.UNDER_REVIEW, action, OFFICER, latest_affordability_version=None)
+    assert missing == ["an affordability assessment must exist before recommending"]
     short = "x" * (MIN_RATIONALE_LENGTH - 1)
     assert _violations(S.UNDER_REVIEW, action, OFFICER, rationale=short)
     padded = " " * 30 + "short" + " " * 30  # whitespace does not count towards the minimum
@@ -338,7 +350,7 @@ def test_maker_checker(action: Action) -> None:
     same_person = Actor.staff(OFFICER_ID, Role.CREDIT_ANALYST)
     violations = _violations(S.RECOMMENDED_APPROVAL, action, same_person)
     assert any("other than the recommender" in v for v in violations)
-    assert transition(S.RECOMMENDED_APPROVAL, action, ANALYST, PASSING)
+    assert transition(S.RECOMMENDED_APPROVAL, action, ANALYST, _facts(action))
 
 
 @pytest.mark.parametrize("action", [A.APPROVE, A.DECLINE])
@@ -349,8 +361,33 @@ def test_maker_checker(action: Action) -> None:
         ({"reason_codes": ()}, "reason code"),
         ({"explanation": ""}, "explanation"),
         ({"model_output_acknowledged": False}, "advisory"),
+        ({"latest_affordability_version": 3}, "latest affordability assessment (version 3)"),
+        ({"reason_codes": ("NOPE",)}, "NOPE is not a recognised reason code"),
+        ({"reason_codes": ("MEETS_CRITERIA", "MEETS_CRITERIA")}, "must not repeat"),
     ],
 )
 def test_decision_guards(action: Action, changes: dict[str, object], fragment: str) -> None:
     violations = _violations(S.RECOMMENDED_REJECTION, action, ADMIN, **changes)
     assert any(fragment in v for v in violations)
+
+
+@pytest.mark.parametrize(
+    ("action", "code", "allowed"),
+    [
+        (A.APPROVE, "MEETS_CRITERIA", True),
+        (A.APPROVE, "COUNTER_OFFER", True),
+        (A.APPROVE, "HIGH_DTI", False),
+        (A.DECLINE, "AFFORDABILITY_SHORTFALL", True),
+        (A.DECLINE, "MEETS_CRITERIA", False),
+    ],
+)
+def test_reason_codes_must_support_the_decision(action: Action, code: str, allowed: bool) -> None:
+    facts = replace(PASSING, recommender_id=OTHER_OFFICER_ID, reason_codes=(code,))
+    if allowed:
+        assert transition(S.RECOMMENDED_APPROVAL, action, ANALYST, facts)
+    else:
+        with pytest.raises(GuardViolationError) as excinfo:
+            transition(S.RECOMMENDED_APPROVAL, action, ANALYST, facts)
+        assert excinfo.value.violations == [
+            f"{code} cannot support a decision to {action.value.lower()}"
+        ]

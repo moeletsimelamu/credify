@@ -16,10 +16,13 @@ from app.core.db import build_engine, build_session_factory
 from app.core.errors import register_error_handlers
 from app.core.logging import configure_logging
 from app.core.middleware import RequestContextMiddleware
+from app.modules.analytics.router import router as analytics_router
 from app.modules.applicants.router import router as applicants_router
 from app.modules.applications.router import router as applications_router
 from app.modules.audit.router import router as audit_router
+from app.modules.decisions.router import router as decisions_router
 from app.modules.identity.router import auth_router, users_router
+from app.modules.loans.router import accounts as loan_accounts_router
 from app.modules.loans.router import router as loans_router
 from app.modules.products.router import router as products_router
 
@@ -33,7 +36,10 @@ def build_api_router() -> APIRouter:
     router.include_router(products_router)
     router.include_router(applicants_router)
     router.include_router(applications_router)
+    router.include_router(decisions_router)
     router.include_router(loans_router)
+    router.include_router(loan_accounts_router)
+    router.include_router(analytics_router)
     router.include_router(audit_router)
     return router
 

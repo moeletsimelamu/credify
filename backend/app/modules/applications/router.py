@@ -10,7 +10,7 @@ import uuid
 from collections.abc import Sequence
 from datetime import date, datetime
 
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, Depends, Query, Request, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.clock import Clock, business_date, get_clock
@@ -45,10 +45,21 @@ from app.modules.applications.schemas import (
     StatusHistoryRead,
     WithdrawRequest,
 )
+from app.modules.decisions.domain.reason_codes import ReasonCode
+from app.modules.decisions.models import LendingDecision, LoanRecommendation
+from app.modules.decisions.schemas import (
+    ApplicantDecisionRead,
+    DecisionCreate,
+    DecisionRead,
+    ReasonRead,
+    RecommendationCreate,
+    RecommendationRead,
+    SendBackRequest,
+)
 from app.modules.identity.dependencies import get_current_user, require
 from app.modules.identity.models import User
 from app.modules.identity.permissions import Permission
-from app.modules.loans.schemas import RepaymentSchedulePreview
+from app.modules.loans.schemas import LoanAccountRead, RepaymentSchedulePreview
 
 router = APIRouter(prefix="/applications", tags=["applications"])
 
@@ -57,6 +68,10 @@ _assign = require(Permission.APPLICATION_ASSIGN)
 _request_info = require(Permission.APPLICATION_REQUEST_INFO)
 _note = require(Permission.APPLICATION_NOTE)
 _run_affordability = require(Permission.AFFORDABILITY_RUN)
+_recommend = require(Permission.APPLICATION_RECOMMEND)
+_decide = require(Permission.APPLICATION_DECIDE)
+_disburse = require(Permission.LOAN_DISBURSE)
+_read_any = require(Permission.APPLICATION_READ_ANY)
 
 
 def _ctx(request: Request, user: User, clock: Clock) -> service.Context:
@@ -426,3 +441,133 @@ def get_repayment_schedule(
         user,
         disbursement_date=disbursement_date or business_date(clock),
     )
+
+
+# --- Recommendation, decision and disbursement --------------------------------------------
+
+
+@router.post(
+    "/{application_id}/recommendation",
+    response_model=RecommendationRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def recommend(
+    application_id: uuid.UUID,
+    data: RecommendationCreate,
+    request: Request,
+    expected_version: int | None = Depends(if_match_version),
+    session: Session = Depends(get_session),
+    clock: Clock = Depends(get_clock),
+    user: User = Depends(_recommend),
+) -> LoanRecommendation:
+    """A loan officer recommends approval or rejection, citing the latest assessment."""
+    return service.recommend(
+        session,
+        application_id,
+        data,
+        _ctx(request, user, clock),
+        expected_version=expected_version,
+    )
+
+
+@router.get("/{application_id}/recommendations", response_model=list[RecommendationRead])
+def list_recommendations(
+    application_id: uuid.UUID,
+    session: Session = Depends(get_session),
+    user: User = Depends(_read_any),
+) -> Sequence[LoanRecommendation]:
+    """Every recommendation, oldest first (staff only: rationales are internal)."""
+    return service.list_recommendations(session, application_id, user)
+
+
+@router.post("/{application_id}/send-back", response_model=ApplicationDetail)
+def send_back(
+    application_id: uuid.UUID,
+    data: SendBackRequest,
+    request: Request,
+    expected_version: int | None = Depends(if_match_version),
+    session: Session = Depends(get_session),
+    clock: Clock = Depends(get_clock),
+    user: User = Depends(_decide),
+) -> ApplicationDetail:
+    """Return a recommended application to review instead of deciding it."""
+    application = service.send_back(
+        session,
+        application_id,
+        data.reason,
+        _ctx(request, user, clock),
+        expected_version=expected_version,
+    )
+    return _detail(session, application, user)
+
+
+@router.post(
+    "/{application_id}/decision", response_model=DecisionRead, status_code=status.HTTP_201_CREATED
+)
+def decide(
+    application_id: uuid.UUID,
+    data: DecisionCreate,
+    request: Request,
+    expected_version: int | None = Depends(if_match_version),
+    session: Session = Depends(get_session),
+    clock: Clock = Depends(get_clock),
+    user: User = Depends(_decide),
+) -> LendingDecision:
+    """Record the final decision. The decider must not be the recommender (maker-checker)."""
+    return service.decide(
+        session,
+        application_id,
+        data,
+        _ctx(request, user, clock),
+        expected_version=expected_version,
+    )
+
+
+@router.get("/{application_id}/decision", response_model=DecisionRead | ApplicantDecisionRead)
+def get_decision(
+    application_id: uuid.UUID,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+) -> DecisionRead | ApplicantDecisionRead:
+    """Staff see the full record. Applicants see the outcome, reasons and approved terms."""
+    decision = service.get_decision(session, application_id, user)
+    if user.is_staff:
+        return DecisionRead.model_validate(decision)
+    return ApplicantDecisionRead(
+        application_id=decision.application_id,
+        decision=decision.decision,
+        reasons=[ReasonRead.for_code(ReasonCode(code)) for code in decision.reason_codes],
+        approved_amount=decision.approved_amount,
+        approved_term_months=decision.approved_term_months,
+        decided_at=decision.created_at,
+    )
+
+
+@router.post(
+    "/{application_id}/disburse",
+    response_model=LoanAccountRead,
+    status_code=status.HTTP_201_CREATED,
+    responses={200: {"description": "Already disbursed: the existing account is returned"}},
+)
+def disburse(
+    application_id: uuid.UUID,
+    request: Request,
+    response: Response,
+    session: Session = Depends(get_session),
+    clock: Clock = Depends(get_clock),
+    user: User = Depends(_disburse),
+) -> LoanAccountRead:
+    """Open the loan account (simulated disbursement today). Safe to repeat."""
+    account, created = service.disburse(session, application_id, _ctx(request, user, clock))
+    if not created:
+        response.status_code = status.HTTP_200_OK
+    return LoanAccountRead.model_validate(account)
+
+
+@router.get("/{application_id}/loan-account", response_model=LoanAccountRead)
+def get_loan_account(
+    application_id: uuid.UUID,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+) -> LoanAccountRead:
+    return LoanAccountRead.model_validate(service.get_loan_account(session, application_id, user))

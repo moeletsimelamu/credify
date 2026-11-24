@@ -14,9 +14,11 @@ Three kinds of failure are distinguished so callers can respond precisely:
 from __future__ import annotations
 
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
 
+from app.modules.decisions.domain.reason_codes import DecisionOutcome, problems_for
 from app.modules.identity.roles import Role
 
 MIN_RATIONALE_LENGTH = 20
@@ -164,9 +166,10 @@ class TransitionFacts:
     # RESUME_REVIEW
     open_information_requests: int = 0
     assessments_refreshed: bool = False
-    # RECOMMEND_*
+    # RECOMMEND_* and APPROVE / DECLINE: the evidence cited must be the latest assessment
     rationale: str | None = None
     reviewed_affordability_version: int | None = None
+    latest_affordability_version: int | None = None
     # APPROVE / DECLINE
     recommender_id: uuid.UUID | None = None
     reason_codes: tuple[str, ...] = field(default_factory=tuple)
@@ -201,6 +204,9 @@ class Transition:
     action: Action
     source: ApplicationStatus
     target: ApplicationStatus
+
+
+type Guard = Callable[[TransitionFacts, Actor], list[str]]
 
 
 def _blank(text: str | None) -> bool:
@@ -265,10 +271,17 @@ def _guard_resume(facts: TransitionFacts, _: Actor) -> list[str]:
     return problems
 
 
+def _evidence_problems(facts: TransitionFacts, step: str) -> list[str]:
+    latest = facts.latest_affordability_version
+    if latest is None:
+        return [f"an affordability assessment must exist before {step}"]
+    if facts.reviewed_affordability_version != latest:
+        return [f"review the latest affordability assessment (version {latest}) before {step}"]
+    return []
+
+
 def _guard_recommend(facts: TransitionFacts, _: Actor) -> list[str]:
-    problems = []
-    if facts.reviewed_affordability_version is None:
-        problems.append("review the latest affordability assessment before recommending")
+    problems = _evidence_problems(facts, "recommending")
     if _blank(facts.rationale) or len((facts.rationale or "").strip()) < MIN_RATIONALE_LENGTH:
         problems.append(f"a rationale of at least {MIN_RATIONALE_LENGTH} characters is required")
     return problems
@@ -280,27 +293,33 @@ def _guard_send_back(facts: TransitionFacts, _: Actor) -> list[str]:
     )
 
 
-def _guard_decide(facts: TransitionFacts, actor: Actor) -> list[str]:
-    problems = []
-    # Maker–checker (approved decision D2): whoever recommended may not decide.
-    if facts.recommender_id is None:
-        problems.append("a recommendation must be recorded before a decision")
-    elif facts.recommender_id == actor.user_id:
-        problems.append("the decision must be made by someone other than the recommender")
-    if not facts.reason_codes:
-        problems.append("at least one reason code is required")
-    if _blank(facts.explanation):
-        problems.append("an explanation is required")
-    if not facts.model_output_acknowledged:
-        problems.append("acknowledge that the model output is advisory only")
-    return problems
+def _decide_guard(outcome: DecisionOutcome) -> Guard:
+    def guard(facts: TransitionFacts, actor: Actor) -> list[str]:
+        problems = []
+        # Maker–checker (approved decision D2): whoever recommended may not decide.
+        if facts.recommender_id is None:
+            problems.append("a recommendation must be recorded before a decision")
+        elif facts.recommender_id == actor.user_id:
+            problems.append("the decision must be made by someone other than the recommender")
+        problems += _evidence_problems(facts, "deciding")
+        if not facts.reason_codes:
+            problems.append("at least one reason code is required")
+        else:
+            problems += problems_for(outcome, facts.reason_codes)
+        if _blank(facts.explanation):
+            problems.append("an explanation is required")
+        if not facts.model_output_acknowledged:
+            problems.append("acknowledge that the model output is advisory only")
+        return problems
+
+    return guard
 
 
 def _no_guard(_: TransitionFacts, __: Actor) -> list[str]:
     return []
 
 
-GUARDS = {
+GUARDS: dict[Action, Guard] = {
     Action.SUBMIT: _guard_submit,
     Action.QUEUE_FOR_REVIEW: _guard_queue,
     Action.START_REVIEW: _guard_start_review,
@@ -309,8 +328,8 @@ GUARDS = {
     Action.RECOMMEND_APPROVAL: _guard_recommend,
     Action.RECOMMEND_REJECTION: _guard_recommend,
     Action.SEND_BACK: _guard_send_back,
-    Action.APPROVE: _guard_decide,
-    Action.DECLINE: _guard_decide,
+    Action.APPROVE: _decide_guard(DecisionOutcome.APPROVED),
+    Action.DECLINE: _decide_guard(DecisionOutcome.DECLINED),
     Action.WITHDRAW: _no_guard,
 }
 

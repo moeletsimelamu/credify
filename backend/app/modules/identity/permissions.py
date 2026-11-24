@@ -27,6 +27,7 @@ class Permission(StrEnum):
     AFFORDABILITY_RUN = "affordability:run"
     RISK_RUN = "risk:run"
     RISK_ANNOTATE = "risk:annotate"
+    LOAN_READ_ANY = "loan:read_any"
     LOAN_DISBURSE = "loan:disburse"
     REPAYMENT_RECORD = "repayment:record"
     REPAYMENT_RECORD_OWN = "repayment:record_own"
@@ -47,6 +48,7 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
             P.APPLICATION_NOTE,
             P.APPLICATION_ASSIGN,
             P.APPLICATION_DECIDE,
+            P.LOAN_READ_ANY,
             P.LOAN_DISBURSE,
             P.REPAYMENT_RECORD,
             P.ANALYTICS_PORTFOLIO,
@@ -62,6 +64,7 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
             P.APPLICATION_REQUEST_INFO,
             P.APPLICATION_RECOMMEND,
             P.AFFORDABILITY_RUN,
+            P.LOAN_READ_ANY,
             P.LOAN_DISBURSE,
             P.REPAYMENT_RECORD,
             P.ANALYTICS_PORTFOLIO,
@@ -77,6 +80,7 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
             P.AFFORDABILITY_RUN,
             P.RISK_RUN,
             P.RISK_ANNOTATE,
+            P.LOAN_READ_ANY,
             P.ANALYTICS_PORTFOLIO,
             P.ANALYTICS_MODEL,
         }

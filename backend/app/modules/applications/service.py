@@ -5,8 +5,11 @@ status-history row and an audit event in the same transaction (ARCHITECTURE.md �
 
 Submitting records affordability assessment v1 and queues the application for review in the
 same transaction (SUBMITTED → PENDING_REVIEW). Resuming review after an information request
-records a fresh assessment the same way. Credit-risk scoring joins both steps in Phase 7;
-recommendations, send-back and decisions arrive in Phase 5.
+records a fresh assessment the same way. Credit-risk scoring joins both steps in Phase 7.
+
+A loan officer's recommendation and an analyst's or administrator's final decision are
+transitions too (maker–checker, approved decision D2). Disbursing an approved application
+opens the (simulated) loan account.
 """
 
 from __future__ import annotations
@@ -16,6 +19,7 @@ from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import Select, func, select
@@ -69,9 +73,14 @@ from app.modules.applications.schemas import (
     DocumentCreate,
 )
 from app.modules.audit import service as audit
+from app.modules.decisions import service as decisions
+from app.modules.decisions.domain.reason_codes import DecisionOutcome, ReasonCode, Recommendation
+from app.modules.decisions.models import LendingDecision, LoanRecommendation
+from app.modules.decisions.schemas import DecisionCreate, RecommendationCreate
 from app.modules.identity.models import Role, User
 from app.modules.identity.permissions import Permission, has_permission
 from app.modules.loans import service as loans
+from app.modules.loans.models import LoanAccount
 from app.modules.loans.schemas import RepaymentSchedulePreview
 from app.modules.products import service as products
 from app.modules.products.models import LoanProduct
@@ -79,8 +88,17 @@ from app.modules.products.models import LoanProduct
 S = ApplicationStatus
 ASSIGNABLE = frozenset({S.PENDING_REVIEW, S.UNDER_REVIEW, S.ADDITIONAL_INFO_REQUESTED})
 # Staff may re-run affordability while the application is with the lender and undecided.
-# Once a recommendation exists, the evidence it cites must stay the latest (Phase 5).
+# While a recommendation awaits a decision (RECOMMENDED_*), the evidence it cites must stay
+# the latest, so re-runs are blocked; sending it back to review allows them again.
 ASSESSABLE = ASSIGNABLE
+RECOMMEND_ACTIONS = {
+    Recommendation.APPROVE: Action.RECOMMEND_APPROVAL,
+    Recommendation.REJECT: Action.RECOMMEND_REJECTION,
+}
+DECISION_ACTIONS = {
+    DecisionOutcome.APPROVED: Action.APPROVE,
+    DecisionOutcome.DECLINED: Action.DECLINE,
+}
 SNAPSHOT_FIELDS = (
     "loan_product_id",
     "requested_amount",
@@ -756,6 +774,257 @@ def respond_to_information_request(
     )
     session.commit()
     return request
+
+
+# --- Recommendation, decision and disbursement --------------------------------------------
+
+
+def _evidence_versions(
+    session: Session, application: LoanApplication, cited_id: uuid.UUID
+) -> tuple[AffordabilityAssessment | None, int | None]:
+    """(the cited assessment, the latest version) for an application."""
+    cited = affordability.get_assessment(session, application.id, cited_id)
+    return cited, affordability.latest_version(session, application.id)
+
+
+def recommend(
+    session: Session,
+    application_id: uuid.UUID,
+    data: RecommendationCreate,
+    ctx: Context,
+    *,
+    expected_version: int | None = None,
+) -> LoanRecommendation:
+    loaded = _load_for_staff(session, application_id, ctx, expected_version)
+    application = loaded.application
+    cited, latest = _evidence_versions(session, application, data.affordability_assessment_id)
+    change = _apply(
+        application,
+        RECOMMEND_ACTIONS[data.recommendation],
+        loaded.actor_for(ctx.user),
+        TransitionFacts(
+            rationale=data.rationale,
+            reviewed_affordability_version=cited.version if cited else None,
+            latest_affordability_version=latest,
+        ),
+    )
+    assert cited is not None  # noqa: S101 — the guard rejects a missing or stale citation
+    recommendation = decisions.record_recommendation(
+        session,
+        application_id=application.id,
+        recommendation=data.recommendation,
+        rationale=data.rationale,
+        affordability_assessment_id=cited.id,
+        actor=ctx.user,
+        now=ctx.now(),
+        ip_address=ctx.ip_address,
+    )
+    _record_transition(
+        session,
+        application,
+        change,
+        ctx,
+        reason=f"Recommended {data.recommendation.value.lower()} "
+        f"(affordability v{cited.version}: {cited.outcome.value})",
+    )
+    session.commit()
+    return recommendation
+
+
+def send_back(
+    session: Session,
+    application_id: uuid.UUID,
+    reason: str,
+    ctx: Context,
+    *,
+    expected_version: int | None = None,
+) -> LoanApplication:
+    """RECOMMENDED_* → UNDER_REVIEW: the decider wants more work before deciding."""
+    loaded = _load_for_staff(session, application_id, ctx, expected_version)
+    application = loaded.application
+    change = _apply(
+        application, Action.SEND_BACK, loaded.actor_for(ctx.user), TransitionFacts(message=reason)
+    )
+    _record_transition(session, application, change, ctx, reason=reason)
+    session.commit()
+    session.refresh(application)
+    return application
+
+
+def _offer_problems(
+    application: LoanApplication,
+    assessment: AffordabilityAssessment | None,
+    amount: Decimal,
+    term: int,
+    reason_codes: tuple[str, ...],
+    today: date,
+) -> list[str]:
+    """Rules for the terms an approval grants (a counter-offer may differ from the request)."""
+    terms = application.product_terms_snapshot or {}
+    problems = []
+    if amount > application.requested_amount:
+        problems.append("the approved amount cannot exceed the requested amount")
+    if amount < Decimal(str(terms["min_amount"])):
+        problems.append(f"the approved amount must be at least {terms['min_amount']}")
+    if not int(terms["min_term_months"]) <= term <= int(terms["max_term_months"]):
+        problems.append(
+            f"the approved term must be between {terms['min_term_months']} and "
+            f"{terms['max_term_months']} months"
+        )
+    requested = (application.requested_amount, application.requested_term_months)
+    if (amount, term) == requested or problems:
+        return problems
+    if ReasonCode.COUNTER_OFFER.value not in reason_codes:
+        problems.append("a counter-offer must cite the COUNTER_OFFER reason code")
+    try:
+        schedule = loans.schedule_from_snapshot(terms, amount, term, today)
+    except BusinessRuleError as exc:
+        return [*problems, exc.detail]
+    if assessment is not None and schedule.first_total_due > assessment.proposed_instalment:
+        problems.append(
+            f"a counter-offer may not cost more per month ({schedule.first_total_due}) than the "
+            f"instalment assessed for affordability ({assessment.proposed_instalment})"
+        )
+    return problems
+
+
+def decide(
+    session: Session,
+    application_id: uuid.UUID,
+    data: DecisionCreate,
+    ctx: Context,
+    *,
+    expected_version: int | None = None,
+) -> LendingDecision:
+    """The final, human decision. The recommendation (and, from Phase 7, the model) advise."""
+    loaded = _load_for_staff(session, application_id, ctx, expected_version)
+    application = loaded.application
+    action = DECISION_ACTIONS[data.decision]
+    recommendation = decisions.latest_recommendation(session, application.id)
+    cited, latest = _evidence_versions(session, application, data.affordability_assessment_id)
+    codes = tuple(data.reason_codes)
+
+    approved_amount: Decimal | None = None
+    approved_term: int | None = None
+    offer_problems: list[str] = []
+    if data.decision is DecisionOutcome.APPROVED:
+        approved_amount = data.approved_amount or application.requested_amount
+        approved_term = data.approved_term_months or application.requested_term_months
+        if application.product_terms_snapshot:
+            offer_problems = _offer_problems(
+                application, cited, approved_amount, approved_term, codes, business_date(ctx.clock)
+            )
+    elif data.approved_amount is not None or data.approved_term_months is not None:
+        offer_problems = ["only an approval can set an approved amount or term"]
+
+    facts = TransitionFacts(
+        recommender_id=recommendation.recommended_by if recommendation else None,
+        reason_codes=codes,
+        explanation=data.explanation,
+        model_output_acknowledged=data.model_output_acknowledged,
+        reviewed_affordability_version=cited.version if cited else None,
+        latest_affordability_version=latest,
+    )
+    try:
+        change = _apply(application, action, loaded.actor_for(ctx.user), facts)
+    except BusinessRuleError as exc:
+        if offer_problems:  # report every problem at once
+            violations = [*exc.extra.get("violations", []), *offer_problems]
+            raise BusinessRuleError(
+                "; ".join(violations), extra={**exc.extra, "violations": violations}
+            ) from exc
+        raise
+    if offer_problems:
+        raise BusinessRuleError(
+            "; ".join(offer_problems),
+            extra={"action": action.value, "violations": offer_problems},
+        )
+    assert recommendation is not None  # noqa: S101 — guarded above
+    assert cited is not None  # noqa: S101 — guarded above
+
+    decision = decisions.record_decision(
+        session,
+        application_id=application.id,
+        decision=data.decision,
+        recommendation=recommendation,
+        affordability_assessment_id=cited.id,
+        reason_codes=codes,
+        explanation=data.explanation,
+        approved_amount=approved_amount,
+        approved_term_months=approved_term,
+        actor=ctx.user,
+        now=ctx.now(),
+        ip_address=ctx.ip_address,
+    )
+    application.decided_at = ctx.now()
+    _record_transition(
+        session, application, change, ctx, reason=f"{data.decision.value}: {', '.join(codes)}"
+    )
+    session.commit()
+    return decision
+
+
+def disburse(session: Session, application_id: uuid.UUID, ctx: Context) -> tuple[LoanAccount, bool]:
+    """Open the loan account for an approved application. Idempotent.
+
+    Returns ``(account, created)``: a repeated call returns the existing account.
+    """
+    application = load(session, application_id, ctx.user, for_update=True).application
+    existing = loans.account_for_application(session, application.id)
+    if existing is not None:
+        return existing, False
+    decision = decisions.get_decision(session, application.id)
+    if (
+        application.status is not S.APPROVED
+        or decision is None
+        or decision.approved_amount is None
+        or decision.approved_term_months is None
+        or application.product_terms_snapshot is None
+    ):
+        raise InvalidTransitionError(
+            f"Only approved applications can be disbursed; this one is {application.status.value}",
+            extra={"status": application.status.value},
+        )
+    account = loans.open_account(
+        session,
+        loans.ApprovedLoan(
+            application_id=application.id,
+            applicant_id=application.applicant_id,
+            decision_id=decision.id,
+            reference=application.reference,
+            currency=application.currency,
+            amount=decision.approved_amount,
+            term_months=decision.approved_term_months,
+            terms_snapshot=application.product_terms_snapshot,
+        ),
+        disbursed_on=business_date(ctx.clock),
+        actor=loans.Actor(ctx.user, ctx.now(), ctx.ip_address),
+    )
+    session.commit()
+    return account, True
+
+
+def list_recommendations(
+    session: Session, application_id: uuid.UUID, user: User
+) -> Sequence[LoanRecommendation]:
+    load(session, application_id, user)
+    return decisions.list_recommendations(session, application_id)
+
+
+def get_decision(session: Session, application_id: uuid.UUID, user: User) -> LendingDecision:
+    load(session, application_id, user)
+    decision = decisions.get_decision(session, application_id)
+    if decision is None:
+        raise NotFoundError("This application has not been decided")
+    return decision
+
+
+def get_loan_account(session: Session, application_id: uuid.UUID, user: User) -> LoanAccount:
+    load(session, application_id, user)
+    account = loans.account_for_application(session, application_id)
+    if account is None:
+        raise NotFoundError("No loan account has been opened for this application")
+    return account
 
 
 # --- Notes, documents, history, information requests --------------------------------------

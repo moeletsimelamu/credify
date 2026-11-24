@@ -183,14 +183,17 @@ def inputs_snapshot(
     return loaded
 
 
-def next_version(session: Session, application_id: uuid.UUID) -> int:
-    """Callers hold the application row lock, so versions are allocated one at a time."""
-    current = session.scalar(
+def latest_version(session: Session, application_id: uuid.UUID) -> int | None:
+    return session.scalar(
         select(func.max(AffordabilityAssessment.version)).where(
             AffordabilityAssessment.application_id == application_id
         )
     )
-    return (current or 0) + 1
+
+
+def next_version(session: Session, application_id: uuid.UUID) -> int:
+    """Callers hold the application row lock, so versions are allocated one at a time."""
+    return (latest_version(session, application_id) or 0) + 1
 
 
 def record_assessment(

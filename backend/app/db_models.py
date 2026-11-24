@@ -17,7 +17,16 @@ from app.modules.applications.models import (
     ReviewNote,
 )
 from app.modules.audit.models import AuditEvent
+from app.modules.decisions.models import LendingDecision, LoanRecommendation
 from app.modules.identity.models import RefreshToken, User
+from app.modules.loans.models import (
+    LoanAccount,
+    LoanCharge,
+    LoanTransaction,
+    PaymentAllocation,
+    RepaymentSchedule,
+    ScheduleInstalment,
+)
 from app.modules.products.models import LoanProduct
 
 __all__ = [
@@ -32,9 +41,17 @@ __all__ = [
     "ExpenseRecord",
     "IncomeRecord",
     "InformationRequest",
+    "LendingDecision",
+    "LoanAccount",
     "LoanApplication",
+    "LoanCharge",
     "LoanProduct",
+    "LoanRecommendation",
+    "LoanTransaction",
+    "PaymentAllocation",
     "RefreshToken",
+    "RepaymentSchedule",
     "ReviewNote",
+    "ScheduleInstalment",
     "User",
 ]

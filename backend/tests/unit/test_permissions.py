@@ -36,6 +36,14 @@ def test_every_role_has_a_permission_set() -> None:
         (Role.APPLICANT, P.APPLICATION_CREATE_OWN, True),
         (Role.APPLICANT, P.REPAYMENT_RECORD, False),
         (Role.APPLICANT, P.REPAYMENT_RECORD_OWN, True),
+        # Staff read every loan; applicants only their own (enforced in the service).
+        (Role.ADMIN, P.LOAN_READ_ANY, True),
+        (Role.LOAN_OFFICER, P.LOAN_READ_ANY, True),
+        (Role.CREDIT_ANALYST, P.LOAN_READ_ANY, True),
+        (Role.APPLICANT, P.LOAN_READ_ANY, False),
+        (Role.CREDIT_ANALYST, P.REPAYMENT_RECORD, False),
+        (Role.LOAN_OFFICER, P.LOAN_DISBURSE, True),
+        (Role.CREDIT_ANALYST, P.LOAN_DISBURSE, False),
         (Role.APPLICANT, P.ANALYTICS_PORTFOLIO, False),
         # Internal review notes are staff-only.
         (Role.ADMIN, P.APPLICATION_NOTE, True),
