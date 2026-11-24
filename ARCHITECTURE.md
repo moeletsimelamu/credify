@@ -380,3 +380,12 @@ Choices made while building applicants and applications, within the approved des
 | Arrears job | `python -m scripts.run_arrears_job [--as-of DATE]`. Idempotent; commits per account; skips accounts already evaluated for a later date; reconciles every account against its transaction log and exits non-zero on a discrepancy. Repayments and settlements bring the account up to date for their value date first, so late fees are always charged before money is allocated. |
 | Portfolio | `GET /analytics/portfolio?date_from=&date_to=` (`analytics:portfolio`), per currency, defaulting to the last 365 days. Arrears figures use each account's cached position (`position_as_of`). |
 | Demo seed | `python -m scripts.seed_demo_data` drives the real service functions with a simulated clock (deterministic per `--seed` and `--as-of`). Compose runs it as an opt-in `seed` service. |
+
+## 16. Phase 6 implementation decisions (2026-11-24)
+
+| Topic | Decision |
+|---|---|
+| ML project | `ml/` is its own uv project (`credify-ml`) with its own lock file and CI job. It depends on the backend as an editable path dependency, which is why the backend is now built as a package (`hatchling`, package `app`). The API's runtime image is unchanged and does not include the ML libraries yet; Phase 7 adds what scoring needs. |
+| Feature builder | `app/modules/credit_risk/features.py` is pure (no database, HTTP or scikit-learn). Money stays `Decimal` until the builder converts features to floats at the model boundary; nothing flows back into a financial calculation. |
+| Data and artefacts | `ml/data/` and `ml/artefacts/` are git-ignored and reproducible. `ml/reports/phase6/` (training summary, JSON and Markdown) and the executed exploration notebook are committed. |
+| Details | See docs/ML_STRATEGY.md §11. |

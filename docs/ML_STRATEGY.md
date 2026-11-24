@@ -116,3 +116,21 @@ Using the audit-only synthetic attributes (never features):
 - Metrics measure recovery of the simulated process, not real-world performance.
 - No temporal validation, drift monitoring or reject inference (real lenders only observe outcomes for approved loans).
 - Simulated credit-history features stand in for bureau data that real lenders would obtain with consent.
+
+---
+
+## 11. Phase 6 implementation notes (2026-11-24)
+
+| Topic | Decision |
+|---|---|
+| Shared feature builder | `backend/app/modules/credit_risk/features.py` (`features-1.0.0`): 17 features, exactly the §3 list, each with a kind, documented range and missing-value meaning. `RiskInput` has no field for any protected or proxy attribute, so the builder cannot read one; a unit test pins this. Out-of-range or non-finite values are rejected. |
+| Packaging | The backend is now an installable package (`app`), and `ml/` is a separate uv project that depends on it, so the pipeline imports the same builder the API will use in Phase 7. |
+| Derived features | Every synthetic borrower goes through the production affordability calculator (`assess()`), priced as the demo `PERSONAL_UNSECURED` product, then the shared builder. Training and serving therefore share the formulas for DTI, repayment burden and residual income, not just the column names. `loan_to_income` = requested amount ÷ (12 × gross monthly income). |
+| Missing values | `revolving_utilisation` is missing when there is no revolving credit and `months_since_delinquency` when there has never been a delinquency. The linear pipeline imputes the median and adds missing-value indicators; gradient boosting handles missing values natively. |
+| Generator | `synthgen-1.0.0`, seed `20261118`, 50,000 rows, default rate 11.73 %. The intercept (−1.91) was calibrated once by bisection and is fixed in `credify_ml/dgp.py`, so the process does not depend on the sample. Sex and age band have no direct effect on the outcome; the injected effects are a 12 % lower income for the synthetic female group and an age-dependent income and employment mix. |
+| Reproducibility | The dataset hash is a SHA-256 of a canonical CSV rendering, independent of the Parquet encoder. Tests pin a golden hash for a 500-row dataset, and CI regenerates the full dataset and runs `train --check`, which requires every validation metric to match the committed summary to four decimal places. Artefact bytes are not compared (they depend on library versions). |
+| Splits | Stratified 70 / 15 / 15 with the dataset seed. Tuning uses 5-fold CV on the training split; models are compared on validation. The test split's ids are hashed in the summary and it is **not scored** until the Phase 7 evaluation. |
+| Grids | Logistic regression: `C` ∈ {0.001, 0.003, 0.01, 0.03, 0.1, 1}, `class_weight` ∈ {none, balanced}. Gradient boosting: learning rate {0.05, 0.1} × leaves {15, 31} × L2 {0, 1}, early stopping, 40 samples per leaf. Selection by CV ROC-AUC. |
+| Results (validation) | Logistic regression ROC-AUC 0.684 (CV 0.696 ± 0.007), Brier 0.0969; gradient boosting 0.681, Brier 0.0976; prior baseline 0.500. The generator's own probabilities score 0.722, the ceiling for these features given the deliberate noise. |
+| Provisional choice | Logistic regression: gradient boosting is not materially better (ROC-AUC −0.003, Brier +0.0007; D4 needs +0.02 and a lower Brier). Final confirmation follows calibration and the one-off test evaluation in Phase 7. |
+| Exploration | `ml/notebooks/01_exploration.ipynb` explores the training split only and reads nothing back into the pipeline. |

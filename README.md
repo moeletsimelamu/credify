@@ -13,7 +13,8 @@
 | 3 | Applicants, loan products, loan applications and review workflow | ✅ Implemented |
 | 4 | Affordability and repayment engines, versioned affordability assessments, schedule previews | ✅ Implemented |
 | 5 | Recommendations, maker–checker decisions, loan accounts, repayments, arrears, early settlement, portfolio analytics, demo seed | ✅ Implemented |
-| 6–10 | See [docs/ROADMAP.md](docs/ROADMAP.md) | Planned |
+| 6 | Synthetic dataset, shared feature builder, baseline / logistic regression / gradient boosting training | ✅ Implemented |
+| 7–10 | See [docs/ROADMAP.md](docs/ROADMAP.md) | Planned |
 
 ## Documentation
 
@@ -92,6 +93,24 @@ uv run pytest
 ```
 
 Integration tests run against the `credify_test` database (created automatically by the Postgres container) using the real Alembic migrations. They are skipped if `CREDIFY_TEST_DATABASE_URL` is not set.
+
+## ML pipeline (offline)
+
+The credit-risk model is trained offline in [`ml/`](ml/README.md), never inside a web request. From `ml/`:
+
+```bash
+uv sync
+```
+
+```bash
+uv run python -m credify_ml.generate
+```
+
+```bash
+uv run python -m credify_ml.train --check
+```
+
+The first command installs the pipeline (it reuses the backend's feature builder). The second writes the synthetic dataset to `ml/data/` (git-ignored). The third re-trains every model and confirms the metrics in [`ml/reports/phase6/training_summary.md`](ml/reports/phase6/training_summary.md) are reproduced; drop `--check` to overwrite them.
 
 ## Project ownership
 
