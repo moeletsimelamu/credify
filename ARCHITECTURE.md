@@ -116,6 +116,7 @@ Permissions are checked **on the server** via a dependency, e.g. `Depends(requir
 | `repayment:record_own` (simulated, own loan) | | | | ✅ |
 | `analytics:portfolio` | ✅ | ✅ | ✅ | |
 | `analytics:model` | ✅ | | ✅ | |
+| `model:manage` (activate a registered model) | ✅ | | | |
 
 **Object-level rules** (enforced in services, not just routes):
 
@@ -216,7 +217,8 @@ Concurrent transitions are prevented with **optimistic locking** (`version_id` c
   - `POST /applications/{id}/submit`, `/start-review`, `/request-information`, `/recommendation`, `/send-back`, `/decision`, `/disburse`, `/withdraw` · `GET …/recommendations` · `GET …/decision` · `GET …/loan-account` · `GET /decision-reason-codes`
   - `POST /applications/{id}/affordability-assessments` (creates a new version) · `GET …/affordability-assessments` · `GET …/affordability-assessments/{id}` · `POST /applications/{id}/resume-review`
   - `GET /products/{id}/repayment-schedule?amount=&term_months=` and `GET /applications/{id}/repayment-schedule` (illustrative previews; nothing stored)
-  - `POST /applications/{id}/risk-assessments` · `GET …/risk-assessments`
+  - `POST /applications/{id}/risk-assessments` · `GET …/risk-assessments` · `GET …/risk-assessments/{id}` · `GET …/credit-bureau-report` (staff only)
+  - `GET /models` · `GET /models/{id}` · `POST /models/{id}/activate` (administrators; no upload endpoint)
   - `GET /loan-accounts` · `GET /loan-accounts/{id}` · `POST /loan-accounts/{id}/repayments` and `POST /loan-accounts/{id}/settlement` (both require an `Idempotency-Key` header) · `GET /loan-accounts/{id}/schedule` (effective) · `GET …/schedules` · `GET …/schedules/{version}` · `GET …/transactions` · `GET …/charges` · `GET /loan-accounts/{id}/settlement-quote?as_of=YYYY-MM-DD`
   - `GET /analytics/portfolio?date_from=&date_to=`
 - Pagination: `?page=&page_size=` (max 100) with `total`; filtering on status, date range, product.
@@ -389,3 +391,22 @@ Choices made while building applicants and applications, within the approved des
 | Feature builder | `app/modules/credit_risk/features.py` is pure (no database, HTTP or scikit-learn). Money stays `Decimal` until the builder converts features to floats at the model boundary; nothing flows back into a financial calculation. |
 | Data and artefacts | `ml/data/` and `ml/artefacts/` are git-ignored and reproducible. `ml/reports/phase6/` (training summary, JSON and Markdown) and the executed exploration notebook are committed. |
 | Details | See docs/ML_STRATEGY.md §11. |
+
+## 17. Phase 7 implementation decisions (2026-11-25)
+
+| Topic | Decision |
+|---|---|
+| Credit history source | Approved: a **simulated bureau** (`credit_risk/domain/bureau.py`, `bureau-sim-1.0.0`) pulls missed payments and months since delinquency once per application at submission, deterministically from the applicant's synthetic reference, stored in `credit_bureau_reports` with provider `SIMULATED`. Account count and revolving utilisation come from the declared commitments. |
+| Scoring | At submission and resumed review (system), and on demand by credit analysts (`risk:run`) while the application is with the lender. Queueing requires the attempt, not success: any failure (no active model, an artefact that fails verification, an out-of-range input, an explanation that does not add up) is stored as `FAILED` with its reason and the application still reaches a human. Re-scoring is blocked while a recommendation awaits a decision. |
+| Citation | A recommendation and a decision must cite the latest *scored* risk assessment when one exists (guard violation otherwise). The decision records `departs_from_model`. |
+| Who sees scores | Staff only (`application:read_any`). Applicants see neither their score nor their bureau report; the decision they see carries plain-language reasons only. |
+| Registry | `model_versions`; `python -m credify_ml.register` creates a `CANDIDATE`. New permission `model:manage` (administrators) for `POST /models/{id}/activate`, which verifies the artefact, retires the previous active version and is audited. `GET /models` needs `analytics:model`. No upload endpoint. |
+| Safe loading | Artefacts load only from `CREDIFY_MODEL_DIR` (mounted read-only in Compose), only after the bytes match the registered SHA-256 (hashing and deserialising the same bytes), only with the scikit-learn version the API runs, and only if the pipeline's feature list matches the shared builder. Path traversal is refused. Loaded models are cached per id and hash. |
+| Readiness | `/health/ready` re-hashes the active model's file on every probe: no active model is reported but healthy; an active model whose file is missing or altered makes the API unready. |
+| Runtime dependencies | The backend now pins `scikit-learn==1.9.1` and depends on numpy, pandas and joblib so it can load and explain models; the ML project resolves identical versions. The API image grew to about 770 MB. Pipeline helper functions live in the backend (`credit_risk/transforms.py`) so a model never needs the `ml/` package to load. |
+| Explanations | One implementation in the backend (`credit_risk/explain.py`), used by the offline evaluation and the API. Exact for logistic regression and checked on every prediction. |
+| Calibration | Not needed for 1.0.0 (validation ECE 0.007). If a future model needs it, Platt scaling is folded into the logistic regression's coefficients, so it remains a plain, exactly explainable model. |
+| Threshold and bands | Chosen on validation: threshold 0.13 (highest recall with ≤ 30 % flagged); bands A < 4 %, B < 7 %, C < 13 %, D < 25 %, E ≥ 25 %, with D starting at the threshold so "flagged" and "review carefully" coincide. |
+| Reproducibility | CI regenerates the dataset and runs `train --check`, `evaluate --check` and `fairness --check`. |
+| Seed | `--reset` keeps registered models. Register and activate a model before seeding to have the demo applications scored; otherwise their assessments are recorded as `FAILED`. |
+| Details | MODEL_CARD.md, DATA_DICTIONARY.md, docs/ML_STRATEGY.md §12. |

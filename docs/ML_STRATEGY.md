@@ -134,3 +134,15 @@ Using the audit-only synthetic attributes (never features):
 | Results (validation) | Logistic regression ROC-AUC 0.684 (CV 0.696 ± 0.007), Brier 0.0969; gradient boosting 0.681, Brier 0.0976; prior baseline 0.500. The generator's own probabilities score 0.722, the ceiling for these features given the deliberate noise. |
 | Provisional choice | Logistic regression: gradient boosting is not materially better (ROC-AUC −0.003, Brier +0.0007; D4 needs +0.02 and a lower Brier). Final confirmation follows calibration and the one-off test evaluation in Phase 7. |
 | Exploration | `ml/notebooks/01_exploration.ipynb` explores the training split only and reads nothing back into the pipeline. |
+
+## 12. Phase 7 implementation notes (2026-11-25)
+
+- **Evaluation** (`credify_ml/evaluate.py`): every choice on validation, test scored once. Served model `credify-pd` 1.0.0 (logistic regression): test ROC-AUC 0.695, PR-AUC 0.273, Brier 0.0960, ECE 0.009; gradient boosting 0.691; the generator's own probabilities 0.745. See [the evaluation report](../ml/reports/credify-pd-1.0.0/evaluation.md).
+- **Calibration:** not needed (validation ECE 0.007 against a 0.015 limit). The fallback, Platt scaling folded into the coefficients, keeps §6's exact explanations valid.
+- **Threshold:** 0.13, the highest recall with at most 30 % of applications flagged (a stated workload assumption). Test: 28.7 % flagged, 54.1 % recall, 22.1 % precision.
+- **Bands (§7 finalised):** A < 4 %, B 4–7 %, C 7–13 %, D 13–25 %, E ≥ 25 %. A was widened from 3 % and E lowered from 30 % so each band holds at least 5 % of validation applications with rising default rates; D starts at the threshold.
+- **Learned vs true:** 17 of 18 effects agree in direction; loan-to-income does not (absorbed by correlated affordability ratios).
+- **Fairness (§8)** (`credify_ml/fairness.py`): disparate impact 0.988 by sex and 0.873 by age band (both pass the heuristic at 0.13; age would fail at 0.10); equal-opportunity difference 0.012 and 0.167. Income and employment type are age proxies; neutralising them worsened the age ratio, so they stay and the disparity is disclosed. See [the fairness report](../ml/reports/credify-pd-1.0.0/fairness.md).
+- **Registry and serving (§9)** as specified, with a separate `model:manage` permission for activation and a scikit-learn version check on load.
+- **Credit history:** the bureau features come from a deterministic **simulated** bureau (approved), matching the training distribution.
+- Full details: [MODEL_CARD.md](../MODEL_CARD.md) and [DATA_DICTIONARY.md](../DATA_DICTIONARY.md).

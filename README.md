@@ -14,7 +14,8 @@
 | 4 | Affordability and repayment engines, versioned affordability assessments, schedule previews | ✅ Implemented |
 | 5 | Recommendations, maker–checker decisions, loan accounts, repayments, arrears, early settlement, portfolio analytics, demo seed | ✅ Implemented |
 | 6 | Synthetic dataset, shared feature builder, baseline / logistic regression / gradient boosting training | ✅ Implemented |
-| 7–10 | See [docs/ROADMAP.md](docs/ROADMAP.md) | Planned |
+| 7 | Evaluation, calibration, fairness, explanations, model registry, risk scoring API, model card | ✅ Implemented |
+| 8–10 | See [docs/ROADMAP.md](docs/ROADMAP.md) | Planned |
 
 ## Documentation
 
@@ -22,6 +23,8 @@
 - [DATABASE.md](DATABASE.md) — schema, constraints, append-only tables, concurrency
 - [FINANCIAL_CALCULATIONS.md](FINANCIAL_CALCULATIONS.md) — formulas, rounding rules, worked examples
 - [docs/ML_STRATEGY.md](docs/ML_STRATEGY.md) — synthetic data, feature policy, evaluation, fairness
+- [MODEL_CARD.md](MODEL_CARD.md) — what the experimental credit-risk model is, how it performs, its fairness and limits
+- [DATA_DICTIONARY.md](DATA_DICTIONARY.md) — every dataset field, feature source and excluded attribute
 - [docs/ROADMAP.md](docs/ROADMAP.md) — phases and Definition of Done
 
 ## Quick start (Docker)
@@ -111,6 +114,18 @@ uv run python -m credify_ml.train --check
 ```
 
 The first command installs the pipeline (it reuses the backend's feature builder). The second writes the synthetic dataset to `ml/data/` (git-ignored). The third re-trains every model and confirms the metrics in [`ml/reports/phase6/training_summary.md`](ml/reports/phase6/training_summary.md) are reproduced; drop `--check` to overwrite them.
+
+To score applications, package, register and activate the model (the API mounts `ml/artefacts/registry` read-only):
+
+```bash
+uv run python -m credify_ml.evaluate
+```
+
+```bash
+uv run python -m credify_ml.register
+```
+
+Then, as an administrator, call `POST /api/v1/models/{id}/activate` with the id it prints. Until a model is active, scoring attempts are recorded as `FAILED` and applications still go to review. See [MODEL_CARD.md](MODEL_CARD.md).
 
 ## Project ownership
 

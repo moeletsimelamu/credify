@@ -22,7 +22,7 @@ PostgreSQL 16. All schema changes go through Alembic; no manual DDL.
 | Append-only tables | Trigger `forbid_update_delete()` raises on `UPDATE`/`DELETE` |
 | Soft vs hard delete | No hard deletes of financial or decision data. Mutable reference data uses `is_active` |
 
-**Append-only tables:** `application_status_history`, `review_notes`, `affordability_assessments`, `credit_risk_assessments`, `recommendations`, `lending_decisions`, `loan_transactions`, `payment_allocations`, `audit_events`.
+**Append-only tables:** `application_status_history`, `review_notes`, `affordability_assessments`, `credit_bureau_reports`, `credit_risk_assessments`, `recommendations`, `lending_decisions`, `loan_transactions`, `payment_allocations`, `audit_events`.
 
 ## 2. Entity–relationship overview
 
@@ -173,18 +173,22 @@ Indexes: `(status, submitted_at)`, `(applicant_id)`, `(assigned_officer_id, stat
 | artefact_uri, artefact_sha256 | TEXT | Hash verified before load |
 | feature_schema | JSONB | Ordered features, types, allowed ranges |
 | training_dataset_sha256, dataset_generator_version, random_seed | | Reproducibility |
-| metrics | JSONB | Test-set metrics, threshold table, fairness metrics |
-| decision_threshold | NUMERIC(7,6) | |
-| band_cutoffs | JSONB | PD → risk band mapping |
-| status | TEXT | `CANDIDATE`, `ACTIVE`, `RETIRED` |
+| metrics | JSONB | Validation and test metrics at the threshold, calibration error |
+| decision_threshold | NUMERIC(7,6) | `CHECK (0 < threshold < 1)`; PD at or above it means "review carefully" |
+| band_cutoffs | JSONB | PD → risk band mapping, with guidance text |
+| explainer | JSONB | Coefficients, training means of the transformed features and the base log-odds, for exact explanations |
+| libraries | JSONB | Library versions at training; the API refuses a scikit-learn mismatch |
+| status | TEXT | `CANDIDATE`, `ACTIVE`, `RETIRED`; `CHECK`s tie `activated_at` and `retired_at` to the status |
 | git_commit | TEXT | |
-| trained_at, activated_at, retired_at | TIMESTAMPTZ | |
+| trained_at, activated_at, retired_at, created_at | TIMESTAMPTZ | |
 
-Partial unique index: `UNIQUE (name) WHERE status = 'ACTIVE'` — exactly one active model.
+Partial unique index: `UNIQUE (name) WHERE status = 'ACTIVE'` — exactly one active model. `artefact_uri` is a plain relative path inside the read-only model directory; `artefact_sha256` must be 64 lowercase hex characters. Only `status` and its timestamps ever change, through the audited activation; registration happens only from the offline pipeline, so there is no `registered_by` column (the audit event records it, and a foreign key to `users` would tie the registry to demo data that a seed reset clears).
 
-**`credit_risk_assessments`** *(append-only)* — `id`, `application_id`, `version` (`UNIQUE (application_id, version)`), `model_version_id FK`, `feature_snapshot JSONB` (exact model inputs), `probability_of_default NUMERIC(7,6)`, `risk_band` (`A`–`E`), `explanation JSONB` (per-feature contributions, base value), `status` (`SCORED`, `FAILED`), `failure_reason NULL`, `requested_by NULL`, `created_at`.
+**`credit_bureau_reports`** *(append-only)* — `id`, `application_id FK UNIQUE` (pulled once per application), `applicant_id FK`, `provider` (`CHECK = 'SIMULATED'`), `simulator_version`, `missed_payments_12m` (0–12), `months_since_delinquency NULL` (0–600; NULL = never delinquent), `created_at`. A deterministic simulation: no real bureau is contacted.
 
-**`recommendations`** *(append-only)* — `id`, `application_id`, `recommended_by`, `recommendation` (`APPROVE`, `REJECT`), `rationale` (`CHECK` ≥ 20 non-blank characters), `affordability_assessment_id FK` (must be the latest version when recorded), `created_at`. Index on `(application_id, created_at)`; the latest row is the one a decision responds to. `credit_risk_assessment_id FK NULL` is added in Phase 7 with the risk table.
+**`credit_risk_assessments`** *(append-only)* — `id`, `application_id`, `version` (`UNIQUE (application_id, version)`), `run_reason` (`SUBMISSION`, `RESUBMISSION`, `STAFF_REQUEST`), `status` (`SCORED`, `FAILED`), `model_version_id FK NULL` (NULL when no model was active), `affordability_assessment_id FK NULL`, `bureau_report_id FK NULL`, `feature_snapshot JSONB` (the 17 exact model inputs, their order, the schema version and their sources), `probability_of_default NUMERIC(7,6)`, `risk_band` (`A`–`E`), `decision_threshold`, `above_threshold`, `explanation JSONB` (ranked contributions, base and total log-odds, caveat), `failure_reason`, `requested_by NULL` (NULL for automatic runs), `created_at`. `CHECK`s: a `SCORED` row has every result field; a `FAILED` row has a reason.
+
+**`recommendations`** *(append-only)* — `id`, `application_id`, `recommended_by`, `recommendation` (`APPROVE`, `REJECT`), `rationale` (`CHECK` ≥ 20 non-blank characters), `affordability_assessment_id FK` (must be the latest version when recorded), `credit_risk_assessment_id FK NULL` (the latest *scored* risk assessment, required when one exists), `created_at`. Index on `(application_id, created_at)`; the latest row is the one a decision responds to.
 
 **`lending_decisions`** *(append-only)*
 | Column | Type | Notes |
@@ -201,7 +205,8 @@ Partial unique index: `UNIQUE (name) WHERE status = 'ACTIVE'` — exactly one ac
 | approved_amount, approved_term_months | NULL | Set exactly when `decision = 'APPROVED'` (`CHECK`). A counter-offer may lower the amount or change the term, must cite `COUNTER_OFFER`, and may not cost more per month than the assessed instalment |
 | created_at | | |
 
-`credit_risk_assessment_id` and `departs_from_model` are added in Phase 7, when there is a model output to compare with.
+| credit_risk_assessment_id | FK NULL | The latest scored risk assessment, cited (required when one exists) |
+| departs_from_model | BOOLEAN NULL | Approving an application flagged "review carefully" (PD ≥ threshold), or declining one that is not. NULL when no scored assessment existed |
 
 ### 3.6 Loans and repayments
 
