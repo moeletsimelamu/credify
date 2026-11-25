@@ -42,3 +42,11 @@ SCHEDULE_START = date(2026, 1, 1)  # fixes due dates only; it never changes an a
 # Stratified train / validation / test shares. The test set is used once, in Phase 7.
 SPLIT = (0.70, 0.15, 0.15)
 CV_FOLDS = 5
+
+# The model registered in Phase 7.
+MODEL_NAME = "credify-pd"
+MODEL_VERSION = "1.0.0"
+# Policy assumption: at most this share of applications is flagged for careful review.
+MAX_FLAGGED_RATE = 0.30
+# Risk bands must each hold at least this share of validation applications.
+MIN_BAND_SHARE = 0.05

@@ -1,0 +1,334 @@
+{
+  "attributes_are_features": false,
+  "band_cutoffs": [
+    0.04,
+    0.07,
+    0.13,
+    0.25
+  ],
+  "disparities": {
+    "age_band": {
+      "disparate_impact_ratio": 0.8731,
+      "disparate_impact_ratio_bands": 0.8731,
+      "equal_opportunity_difference": 0.1666,
+      "false_positive_rate_difference": 0.0832,
+      "favourable_outcome": "not flagged for careful review (PD below the threshold)",
+      "max_calibration_gap": 0.0275,
+      "passes_four_fifths_heuristic": true
+    },
+    "sex": {
+      "disparate_impact_ratio": 0.9876,
+      "disparate_impact_ratio_bands": 0.9876,
+      "equal_opportunity_difference": 0.0117,
+      "false_positive_rate_difference": 0.01,
+      "favourable_outcome": "not flagged for careful review (PD below the threshold)",
+      "max_calibration_gap": 0.0033,
+      "passes_four_fifths_heuristic": true
+    }
+  },
+  "groups": {
+    "age_band": [
+      {
+        "attribute": "age_band",
+        "borrowers": 942,
+        "calibration_gap": 0.0047,
+        "elevated_band_rate": 0.3588,
+        "false_positive_rate": 0.3163,
+        "flagged_rate": 0.3588,
+        "group": "18-24",
+        "mean_pd": 0.1321,
+        "observed_default_rate": 0.1274,
+        "precision": 0.2308,
+        "roc_auc": 0.6875,
+        "true_positive_rate": 0.65
+      },
+      {
+        "attribute": "age_band",
+        "borrowers": 2082,
+        "calibration_gap": 0.0004,
+        "elevated_band_rate": 0.2656,
+        "false_positive_rate": 0.2348,
+        "flagged_rate": 0.2656,
+        "group": "25-34",
+        "mean_pd": 0.1147,
+        "observed_default_rate": 0.1143,
+        "precision": 0.217,
+        "roc_auc": 0.6884,
+        "true_positive_rate": 0.5042
+      },
+      {
+        "attribute": "age_band",
+        "borrowers": 1893,
+        "calibration_gap": 0.0051,
+        "elevated_band_rate": 0.2763,
+        "false_positive_rate": 0.2426,
+        "flagged_rate": 0.2763,
+        "group": "35-44",
+        "mean_pd": 0.1124,
+        "observed_default_rate": 0.1072,
+        "precision": 0.2161,
+        "roc_auc": 0.7269,
+        "true_positive_rate": 0.5567
+      },
+      {
+        "attribute": "age_band",
+        "borrowers": 1353,
+        "calibration_gap": -0.0005,
+        "elevated_band_rate": 0.2698,
+        "false_positive_rate": 0.2429,
+        "flagged_rate": 0.2698,
+        "group": "45-54",
+        "mean_pd": 0.1111,
+        "observed_default_rate": 0.1116,
+        "precision": 0.2,
+        "roc_auc": 0.6764,
+        "true_positive_rate": 0.4834
+      },
+      {
+        "attribute": "age_band",
+        "borrowers": 859,
+        "calibration_gap": -0.0275,
+        "elevated_band_rate": 0.2887,
+        "false_positive_rate": 0.2449,
+        "flagged_rate": 0.2887,
+        "group": "55-64",
+        "mean_pd": 0.1168,
+        "observed_default_rate": 0.1444,
+        "precision": 0.2742,
+        "roc_auc": 0.7021,
+        "true_positive_rate": 0.5484
+      },
+      {
+        "attribute": "age_band",
+        "borrowers": 371,
+        "calibration_gap": 0.013,
+        "elevated_band_rate": 0.345,
+        "false_positive_rate": 0.318,
+        "flagged_rate": 0.345,
+        "group": "65+",
+        "mean_pd": 0.1316,
+        "observed_default_rate": 0.1186,
+        "precision": 0.1875,
+        "roc_auc": 0.6478,
+        "true_positive_rate": 0.5455
+      }
+    ],
+    "sex": [
+      {
+        "attribute": "sex",
+        "borrowers": 3704,
+        "calibration_gap": 0.0021,
+        "elevated_band_rate": 0.2918,
+        "false_positive_rate": 0.2587,
+        "flagged_rate": 0.2918,
+        "group": "F",
+        "mean_pd": 0.1171,
+        "observed_default_rate": 0.115,
+        "precision": 0.2155,
+        "roc_auc": 0.6984,
+        "true_positive_rate": 0.5469
+      },
+      {
+        "attribute": "sex",
+        "borrowers": 3796,
+        "calibration_gap": -0.0033,
+        "elevated_band_rate": 0.2829,
+        "false_positive_rate": 0.2487,
+        "flagged_rate": 0.2829,
+        "group": "M",
+        "mean_pd": 0.1163,
+        "observed_default_rate": 0.1196,
+        "precision": 0.2263,
+        "roc_auc": 0.6918,
+        "true_positive_rate": 0.5352
+      }
+    ]
+  },
+  "mitigation": {
+    "neutralise_proxies": {
+      "age_band": {
+        "disparate_impact_ratio": 0.8417,
+        "equal_opportunity_difference": 0.1565
+      },
+      "neutralised_features": [
+        "gross_monthly_income",
+        "net_monthly_income",
+        "employment_type"
+      ],
+      "sex": {
+        "disparate_impact_ratio": 0.9781,
+        "equal_opportunity_difference": 0.0088
+      },
+      "test_roc_auc": 0.6934
+    },
+    "not_adopted": "Group-specific thresholds would need the protected attribute at decision time. Credify never uses it, so that option is out of scope by design.",
+    "threshold_review": {
+      "age_band": [
+        {
+          "disparate_impact_ratio": 0.7374,
+          "equal_opportunity_difference": 0.1689,
+          "flagged_rate_overall": 0.4353,
+          "threshold": 0.1
+        },
+        {
+          "disparate_impact_ratio": 0.8731,
+          "equal_opportunity_difference": 0.1666,
+          "flagged_rate_overall": 0.2873,
+          "threshold": 0.13
+        },
+        {
+          "disparate_impact_ratio": 0.886,
+          "equal_opportunity_difference": 0.1576,
+          "flagged_rate_overall": 0.2245,
+          "threshold": 0.15
+        },
+        {
+          "disparate_impact_ratio": 0.9465,
+          "equal_opportunity_difference": 0.0674,
+          "flagged_rate_overall": 0.1211,
+          "threshold": 0.2
+        }
+      ],
+      "sex": [
+        {
+          "disparate_impact_ratio": 0.9807,
+          "equal_opportunity_difference": 0.0063,
+          "flagged_rate_overall": 0.4353,
+          "threshold": 0.1
+        },
+        {
+          "disparate_impact_ratio": 0.9876,
+          "equal_opportunity_difference": 0.0117,
+          "flagged_rate_overall": 0.2873,
+          "threshold": 0.13
+        },
+        {
+          "disparate_impact_ratio": 0.9958,
+          "equal_opportunity_difference": 0.0159,
+          "flagged_rate_overall": 0.2245,
+          "threshold": 0.15
+        },
+        {
+          "disparate_impact_ratio": 0.9997,
+          "equal_opportunity_difference": 0.007,
+          "flagged_rate_overall": 0.1211,
+          "threshold": 0.2
+        }
+      ]
+    }
+  },
+  "model": {
+    "name": "credify-pd",
+    "version": "1.0.0"
+  },
+  "proxy_check": {
+    "features": [
+      {
+        "age_band_eta_squared": 0.0701,
+        "feature": "gross_monthly_income",
+        "proxy_for": "age_band",
+        "sex_standardised_mean_difference": -0.1919
+      },
+      {
+        "age_band_eta_squared": 0.0718,
+        "feature": "net_monthly_income",
+        "proxy_for": "age_band",
+        "sex_standardised_mean_difference": -0.192
+      },
+      {
+        "age_band_eta_squared": 0.0537,
+        "feature": "employment_tenure_months",
+        "proxy_for": null,
+        "sex_standardised_mean_difference": -0.0088
+      },
+      {
+        "age_band_eta_squared": 0.0584,
+        "feature": "living_expenses_applied",
+        "proxy_for": null,
+        "sex_standardised_mean_difference": -0.1781
+      },
+      {
+        "age_band_eta_squared": 0.0184,
+        "feature": "existing_debt_instalments",
+        "proxy_for": null,
+        "sex_standardised_mean_difference": -0.1124
+      },
+      {
+        "age_band_eta_squared": 0.0101,
+        "feature": "num_credit_accounts",
+        "proxy_for": null,
+        "sex_standardised_mean_difference": -0.0656
+      },
+      {
+        "age_band_eta_squared": 0.0002,
+        "feature": "revolving_utilisation",
+        "proxy_for": null,
+        "sex_standardised_mean_difference": -0.0055
+      },
+      {
+        "age_band_eta_squared": 0.0001,
+        "feature": "missed_payments_12m",
+        "proxy_for": null,
+        "sex_standardised_mean_difference": -0.0005
+      },
+      {
+        "age_band_eta_squared": 0.0002,
+        "feature": "months_since_delinquency",
+        "proxy_for": null,
+        "sex_standardised_mean_difference": 0.0041
+      },
+      {
+        "age_band_eta_squared": 0.0439,
+        "feature": "requested_amount",
+        "proxy_for": null,
+        "sex_standardised_mean_difference": -0.1488
+      },
+      {
+        "age_band_eta_squared": 0.0001,
+        "feature": "term_months",
+        "proxy_for": null,
+        "sex_standardised_mean_difference": -0.001
+      },
+      {
+        "age_band_eta_squared": 0.0001,
+        "feature": "debt_to_income",
+        "proxy_for": null,
+        "sex_standardised_mean_difference": -0.0084
+      },
+      {
+        "age_band_eta_squared": 0.0008,
+        "feature": "repayment_burden",
+        "proxy_for": null,
+        "sex_standardised_mean_difference": -0.0227
+      },
+      {
+        "age_band_eta_squared": 0.0357,
+        "feature": "residual_income",
+        "proxy_for": null,
+        "sex_standardised_mean_difference": -0.1228
+      },
+      {
+        "age_band_eta_squared": 0.0018,
+        "feature": "loan_to_income",
+        "proxy_for": null,
+        "sex_standardised_mean_difference": 0.0173
+      },
+      {
+        "age_band_max_share_difference": 0.5547,
+        "feature": "employment_type",
+        "proxy_for": "age_band",
+        "sex_max_share_difference": 0.0056
+      },
+      {
+        "age_band_max_share_difference": 0.0221,
+        "feature": "loan_purpose",
+        "proxy_for": null,
+        "sex_max_share_difference": 0.0044
+      }
+    ],
+    "rules": "|standardised mean difference| \u2265 0.3 for sex; \u03b7\u00b2 \u2265 0.06 for age band; for categorical features, a share difference of 10 points or more",
+    "split": "train"
+  },
+  "split": "test",
+  "threshold": 0.13
+}

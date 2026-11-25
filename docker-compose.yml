@@ -34,6 +34,8 @@ services:
       CREDIFY_CORS_ORIGINS: ${CREDIFY_CORS_ORIGINS:-http://localhost:5173}
       CREDIFY_COOKIE_SECURE: ${CREDIFY_COOKIE_SECURE:-false}
       CREDIFY_LOG_LEVEL: ${CREDIFY_LOG_LEVEL:-INFO}
+      # Registered model artefacts, mounted read-only (see ml/README.md to produce them).
+      CREDIFY_MODEL_DIR: /models
     depends_on:
       db:
         condition: service_healthy
@@ -43,6 +45,8 @@ services:
     build:
       context: ./backend
     environment: *api-env
+    volumes:
+      - ./ml/artefacts/registry:/models:ro
     ports:
       - "127.0.0.1:${API_HOST_PORT:-8000}:8000"
     depends_on:
@@ -65,6 +69,7 @@ services:
     environment: *api-env
     volumes:
       - ./.local:/app/.local
+      - ./ml/artefacts/registry:/models:ro
     depends_on:
       migrate:
         condition: service_completed_successfully

@@ -77,6 +77,11 @@ jobs:
         run: uv run python -m credify_ml.generate
       - name: Reproduce the committed training metrics
         run: uv run python -m credify_ml.train --check
+      - name: Reproduce the committed evaluation and fairness reports
+        run: |
+          uv run python -m credify_ml.evaluate --check
+          uv run python -m credify_ml.evaluate > /dev/null
+          uv run python -m credify_ml.fairness --check
 
   secrets-scan:
     name: Secrets scan (gitleaks)

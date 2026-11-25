@@ -11,6 +11,7 @@ from typing import Any
 
 import numpy as np
 from app.modules.credit_risk.features import FEATURES, FeatureKind
+from app.modules.credit_risk.transforms import signed_log
 from sklearn.compose import ColumnTransformer
 from sklearn.dummy import DummyClassifier
 from sklearn.ensemble import HistGradientBoostingClassifier
@@ -25,11 +26,6 @@ PLAIN = [s.name for s in FEATURES if s.kind in (FeatureKind.COUNT, FeatureKind.R
 CATEGORICAL = [s.name for s in FEATURES if s.kind is FeatureKind.CATEGORY]
 CATEGORIES = [list(s.categories) for s in FEATURES if s.kind is FeatureKind.CATEGORY]
 NUMERIC = MONEY + SIGNED_MONEY + PLAIN
-
-
-def _signed_log(values: np.ndarray) -> np.ndarray:
-    """asinh(x / 1000): log-like for large amounts of either sign, linear near zero."""
-    return np.asarray(np.arcsinh(np.asarray(values, dtype=float) / 1000.0))
 
 
 def linear_preprocessor() -> ColumnTransformer:
@@ -52,7 +48,7 @@ def linear_preprocessor() -> ColumnTransformer:
                 Pipeline(
                     [
                         ("impute", SimpleImputer(strategy="median")),
-                        ("log", FunctionTransformer(_signed_log, feature_names_out="one-to-one")),
+                        ("log", FunctionTransformer(signed_log, feature_names_out="one-to-one")),
                         ("scale", StandardScaler()),
                     ]
                 ),

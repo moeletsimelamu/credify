@@ -1,0 +1,643 @@
+{
+  "bands": {
+    "cuts": [
+      0.04,
+      0.07,
+      0.13,
+      0.25
+    ],
+    "provisional_cuts": [
+      0.03,
+      0.07,
+      0.15,
+      0.3
+    ],
+    "rule": "B keeps its 7 % edge and D starts at the operating threshold; A widens from 3 %, then the E edge comes down from 30 % in 5-point steps, until every band holds at least 5% of validation applications with default rates rising from A to E",
+    "test": [
+      {
+        "band": "A",
+        "default_rate": 0.0294,
+        "guidance": "Low modelled risk",
+        "mean_pd": 0.0339,
+        "pd_from": 0.0,
+        "pd_to": 0.04,
+        "share": 0.0499
+      },
+      {
+        "band": "B",
+        "default_rate": 0.0599,
+        "guidance": "Below-average modelled risk",
+        "mean_pd": 0.0558,
+        "pd_from": 0.04,
+        "pd_to": 0.07,
+        "share": 0.2671
+      },
+      {
+        "band": "C",
+        "default_rate": 0.092,
+        "guidance": "Average modelled risk",
+        "mean_pd": 0.095,
+        "pd_from": 0.07,
+        "pd_to": 0.13,
+        "share": 0.3957
+      },
+      {
+        "band": "D",
+        "default_rate": 0.1736,
+        "guidance": "Elevated modelled risk \u2014 review carefully",
+        "mean_pd": 0.1738,
+        "pd_from": 0.13,
+        "pd_to": 0.25,
+        "share": 0.2135
+      },
+      {
+        "band": "E",
+        "default_rate": 0.3574,
+        "guidance": "High modelled risk \u2014 review carefully",
+        "mean_pd": 0.3445,
+        "pd_from": 0.25,
+        "pd_to": 1.0,
+        "share": 0.0739
+      }
+    ],
+    "validation": [
+      {
+        "band": "A",
+        "default_rate": 0.0522,
+        "guidance": "Low modelled risk",
+        "mean_pd": 0.0337,
+        "pd_from": 0.0,
+        "pd_to": 0.04,
+        "share": 0.0511
+      },
+      {
+        "band": "B",
+        "default_rate": 0.0584,
+        "guidance": "Below-average modelled risk",
+        "mean_pd": 0.056,
+        "pd_from": 0.04,
+        "pd_to": 0.07,
+        "share": 0.2625
+      },
+      {
+        "band": "C",
+        "default_rate": 0.0962,
+        "guidance": "Average modelled risk",
+        "mean_pd": 0.0956,
+        "pd_from": 0.07,
+        "pd_to": 0.13,
+        "share": 0.3923
+      },
+      {
+        "band": "D",
+        "default_rate": 0.1645,
+        "guidance": "Elevated modelled risk \u2014 review carefully",
+        "mean_pd": 0.1746,
+        "pd_from": 0.13,
+        "pd_to": 0.25,
+        "share": 0.2172
+      },
+      {
+        "band": "E",
+        "default_rate": 0.3362,
+        "guidance": "High modelled risk \u2014 review carefully",
+        "mean_pd": 0.3408,
+        "pd_from": 0.25,
+        "pd_to": 1.0,
+        "share": 0.0769
+      }
+    ]
+  },
+  "calibration": {
+    "applied": false,
+    "method": null,
+    "platt": null,
+    "rule": "calibrate only if the validation ECE exceeds 0.015; Platt scaling is folded into the logistic regression, so the served model stays a plain logistic regression and its explanations stay exact",
+    "test": {
+      "bins": [
+        {
+          "bin": 1,
+          "mean_predicted": 0.039,
+          "observed_rate": 0.0307,
+          "share": 0.1
+        },
+        {
+          "bin": 2,
+          "mean_predicted": 0.0525,
+          "observed_rate": 0.0667,
+          "share": 0.1
+        },
+        {
+          "bin": 3,
+          "mean_predicted": 0.0628,
+          "observed_rate": 0.0627,
+          "share": 0.1
+        },
+        {
+          "bin": 4,
+          "mean_predicted": 0.0733,
+          "observed_rate": 0.0747,
+          "share": 0.1
+        },
+        {
+          "bin": 5,
+          "mean_predicted": 0.0844,
+          "observed_rate": 0.0987,
+          "share": 0.1
+        },
+        {
+          "bin": 6,
+          "mean_predicted": 0.0979,
+          "observed_rate": 0.088,
+          "share": 0.1
+        },
+        {
+          "bin": 7,
+          "mean_predicted": 0.1157,
+          "observed_rate": 0.1067,
+          "share": 0.1
+        },
+        {
+          "bin": 8,
+          "mean_predicted": 0.142,
+          "observed_rate": 0.1267,
+          "share": 0.1
+        },
+        {
+          "bin": 9,
+          "mean_predicted": 0.1842,
+          "observed_rate": 0.1853,
+          "share": 0.1
+        },
+        {
+          "bin": 10,
+          "mean_predicted": 0.3155,
+          "observed_rate": 0.3333,
+          "share": 0.1
+        }
+      ],
+      "ece": 0.00914
+    },
+    "uncalibrated_validation_ece": 0.007094,
+    "validation": {
+      "bins": [
+        {
+          "bin": 1,
+          "mean_predicted": 0.0384,
+          "observed_rate": 0.0533,
+          "share": 0.1
+        },
+        {
+          "bin": 2,
+          "mean_predicted": 0.0527,
+          "observed_rate": 0.0507,
+          "share": 0.1
+        },
+        {
+          "bin": 3,
+          "mean_predicted": 0.0637,
+          "observed_rate": 0.0707,
+          "share": 0.1
+        },
+        {
+          "bin": 4,
+          "mean_predicted": 0.0739,
+          "observed_rate": 0.072,
+          "share": 0.1
+        },
+        {
+          "bin": 5,
+          "mean_predicted": 0.0859,
+          "observed_rate": 0.088,
+          "share": 0.1
+        },
+        {
+          "bin": 6,
+          "mean_predicted": 0.0995,
+          "observed_rate": 0.0907,
+          "share": 0.1
+        },
+        {
+          "bin": 7,
+          "mean_predicted": 0.1174,
+          "observed_rate": 0.124,
+          "share": 0.1
+        },
+        {
+          "bin": 8,
+          "mean_predicted": 0.1436,
+          "observed_rate": 0.1173,
+          "share": 0.1
+        },
+        {
+          "bin": 9,
+          "mean_predicted": 0.1887,
+          "observed_rate": 0.1893,
+          "share": 0.1
+        },
+        {
+          "bin": 10,
+          "mean_predicted": 0.3166,
+          "observed_rate": 0.3173,
+          "share": 0.1
+        }
+      ],
+      "ece": 0.007094
+    }
+  },
+  "confusion_matrix_test": {
+    "false_negative": 404,
+    "false_positive": 1679,
+    "threshold": 0.13,
+    "true_negative": 4941,
+    "true_positive": 476
+  },
+  "dataset": {
+    "content_sha256": "d75655dceeb35cb6dbdc5f2d9b7ceb684a87ca86c1beb283d41c8c661e5c289e",
+    "default_rate": 0.11734,
+    "generator_version": "synthgen-1.0.0",
+    "rows": 50000,
+    "seed": 20261118
+  },
+  "feature_schema_version": "features-1.0.0",
+  "learned_vs_true": [
+    {
+      "agrees": true,
+      "coefficient": 0.2053,
+      "expected": "+",
+      "feature": "debt_to_income"
+    },
+    {
+      "agrees": true,
+      "coefficient": 0.2877,
+      "expected": "+",
+      "feature": "missed_payments_12m"
+    },
+    {
+      "agrees": true,
+      "coefficient": -0.0317,
+      "expected": "\u2212",
+      "feature": "months_since_delinquency"
+    },
+    {
+      "agrees": true,
+      "coefficient": 0.1591,
+      "expected": "+",
+      "feature": "revolving_utilisation"
+    },
+    {
+      "agrees": true,
+      "coefficient": -0.1608,
+      "expected": "\u2212",
+      "feature": "residual_income"
+    },
+    {
+      "agrees": true,
+      "coefficient": -0.1755,
+      "expected": "\u2212",
+      "feature": "employment_tenure_months"
+    },
+    {
+      "agrees": false,
+      "coefficient": -0.035,
+      "expected": "+",
+      "feature": "loan_to_income"
+    },
+    {
+      "agrees": true,
+      "coefficient": 0.1958,
+      "expected": "+",
+      "feature": "term_months"
+    },
+    {
+      "agrees": true,
+      "coefficient": 0.0818,
+      "expected": "+",
+      "feature": "num_credit_accounts"
+    },
+    {
+      "agrees": true,
+      "coefficient": 0.1939,
+      "expected": "+",
+      "feature": "employment_type=CONTRACT vs PERMANENT"
+    },
+    {
+      "agrees": true,
+      "coefficient": 0.2881,
+      "expected": "+",
+      "feature": "employment_type=SELF_EMPLOYED vs PERMANENT"
+    },
+    {
+      "agrees": true,
+      "coefficient": 0.1937,
+      "expected": "+",
+      "feature": "employment_type=PART_TIME vs PERMANENT"
+    },
+    {
+      "agrees": true,
+      "coefficient": 0.3409,
+      "expected": "+",
+      "feature": "employment_type=UNEMPLOYED vs PERMANENT"
+    },
+    {
+      "agrees": true,
+      "coefficient": 0.2025,
+      "expected": "+",
+      "feature": "employment_type=RETIRED vs PERMANENT"
+    },
+    {
+      "agrees": true,
+      "coefficient": 0.1117,
+      "expected": "+",
+      "feature": "loan_purpose=DEBT_CONSOLIDATION vs neutral purposes"
+    },
+    {
+      "agrees": true,
+      "coefficient": 0.1768,
+      "expected": "+",
+      "feature": "loan_purpose=BUSINESS vs neutral purposes"
+    },
+    {
+      "agrees": true,
+      "coefficient": 0.1513,
+      "expected": "+",
+      "feature": "loan_purpose=MEDICAL vs neutral purposes"
+    },
+    {
+      "agrees": true,
+      "coefficient": -0.0357,
+      "expected": "\u2212",
+      "feature": "loan_purpose=EDUCATION vs neutral purposes"
+    }
+  ],
+  "libraries": {
+    "numpy": "2.5.5",
+    "pandas": "3.1.1",
+    "scikit-learn": "1.9.1"
+  },
+  "model": {
+    "algorithm": "logistic_regression",
+    "name": "credify-pd",
+    "version": "1.0.0"
+  },
+  "operating_threshold": {
+    "rule": "highest recall on defaulters with at most 30% of applications flagged for careful review (chosen on the validation split)",
+    "test": {
+      "f1": 0.3137,
+      "flagged_rate": 0.2873,
+      "precision": 0.2209,
+      "recall": 0.5409,
+      "threshold": 0.13
+    },
+    "threshold": 0.13,
+    "validation": {
+      "f1": 0.2994,
+      "flagged_rate": 0.2941,
+      "precision": 0.2094,
+      "recall": 0.525,
+      "threshold": 0.13
+    }
+  },
+  "score_distribution_test": {
+    "defaulted": {
+      "p25": 0.0856,
+      "p5": 0.0514,
+      "p50": 0.1403,
+      "p75": 0.2398,
+      "p95": 0.433
+    },
+    "repaid": {
+      "p25": 0.0608,
+      "p5": 0.0392,
+      "p50": 0.0869,
+      "p75": 0.1311,
+      "p95": 0.2588
+    }
+  },
+  "split": {
+    "test": {
+      "default_rate": 0.117333,
+      "ids_sha256": "11705fd43325cbaa90e59f98f266e17cc87364e91f6b26c31976f57b2d9f5126",
+      "rows": 7500
+    },
+    "train": {
+      "default_rate": 0.117343,
+      "ids_sha256": "c098a96d9cb9d6e315211fedbb2a7c5d4ae93782f0c522593c0c1b203be96b96",
+      "rows": 35000
+    },
+    "validation": {
+      "default_rate": 0.117333,
+      "ids_sha256": "99bcee8ace57d13b8e1e63d6b1ed0002c89b55ae714eba13f143a1c4f87b1d7c",
+      "rows": 7500
+    }
+  },
+  "test_dgp_oracle": {
+    "brier": 0.092389,
+    "log_loss": 0.317575,
+    "mean_predicted": 0.11087,
+    "observed_rate": 0.117333,
+    "pr_auc": 0.32253,
+    "roc_auc": 0.744726
+  },
+  "test_metrics": {
+    "hist_gradient_boosting": {
+      "brier": 0.096451,
+      "log_loss": 0.333821,
+      "mean_predicted": 0.116753,
+      "observed_rate": 0.117333,
+      "pr_auc": 0.269231,
+      "roc_auc": 0.690819
+    },
+    "logistic_regression": {
+      "brier": 0.096046,
+      "log_loss": 0.332344,
+      "mean_predicted": 0.116727,
+      "observed_rate": 0.117333,
+      "pr_auc": 0.272503,
+      "roc_auc": 0.694923
+    }
+  },
+  "test_prior_baseline": {
+    "brier": 0.103566,
+    "log_loss": 0.361578,
+    "mean_predicted": 0.117343,
+    "observed_rate": 0.117333,
+    "pr_auc": 0.117333,
+    "roc_auc": 0.5
+  },
+  "threshold_table": {
+    "test": [
+      {
+        "f1": 0.2263,
+        "flagged_rate": 0.8747,
+        "precision": 0.1284,
+        "recall": 0.9568,
+        "threshold": 0.05
+      },
+      {
+        "f1": 0.2847,
+        "flagged_rate": 0.4353,
+        "precision": 0.1807,
+        "recall": 0.6705,
+        "threshold": 0.1
+      },
+      {
+        "f1": 0.3183,
+        "flagged_rate": 0.2245,
+        "precision": 0.2423,
+        "recall": 0.4636,
+        "threshold": 0.15
+      },
+      {
+        "f1": 0.3132,
+        "flagged_rate": 0.1211,
+        "precision": 0.3084,
+        "recall": 0.3182,
+        "threshold": 0.2
+      },
+      {
+        "f1": 0.2762,
+        "flagged_rate": 0.0739,
+        "precision": 0.3574,
+        "recall": 0.225,
+        "threshold": 0.25
+      },
+      {
+        "f1": 0.2261,
+        "flagged_rate": 0.0443,
+        "precision": 0.4127,
+        "recall": 0.1557,
+        "threshold": 0.3
+      },
+      {
+        "f1": 0.1738,
+        "flagged_rate": 0.0253,
+        "precision": 0.4895,
+        "recall": 0.1057,
+        "threshold": 0.35
+      },
+      {
+        "f1": 0.1192,
+        "flagged_rate": 0.0147,
+        "precision": 0.5364,
+        "recall": 0.067,
+        "threshold": 0.4
+      },
+      {
+        "f1": 0.0778,
+        "flagged_rate": 0.0095,
+        "precision": 0.5211,
+        "recall": 0.042,
+        "threshold": 0.45
+      },
+      {
+        "f1": 0.0435,
+        "flagged_rate": 0.0053,
+        "precision": 0.5,
+        "recall": 0.0227,
+        "threshold": 0.5
+      },
+      {
+        "f1": 0.0266,
+        "flagged_rate": 0.0031,
+        "precision": 0.5217,
+        "recall": 0.0136,
+        "threshold": 0.55
+      },
+      {
+        "f1": 0.0157,
+        "flagged_rate": 0.0015,
+        "precision": 0.6364,
+        "recall": 0.008,
+        "threshold": 0.6
+      }
+    ],
+    "validation": [
+      {
+        "f1": 0.2239,
+        "flagged_rate": 0.8748,
+        "precision": 0.127,
+        "recall": 0.9466,
+        "threshold": 0.05
+      },
+      {
+        "f1": 0.281,
+        "flagged_rate": 0.4455,
+        "precision": 0.1775,
+        "recall": 0.6739,
+        "threshold": 0.1
+      },
+      {
+        "f1": 0.3157,
+        "flagged_rate": 0.2281,
+        "precision": 0.239,
+        "recall": 0.4648,
+        "threshold": 0.15
+      },
+      {
+        "f1": 0.3058,
+        "flagged_rate": 0.1295,
+        "precision": 0.2915,
+        "recall": 0.3216,
+        "threshold": 0.2
+      },
+      {
+        "f1": 0.2663,
+        "flagged_rate": 0.0769,
+        "precision": 0.3362,
+        "recall": 0.2205,
+        "threshold": 0.25
+      },
+      {
+        "f1": 0.2146,
+        "flagged_rate": 0.0455,
+        "precision": 0.3842,
+        "recall": 0.1489,
+        "threshold": 0.3
+      },
+      {
+        "f1": 0.1619,
+        "flagged_rate": 0.026,
+        "precision": 0.4462,
+        "recall": 0.0989,
+        "threshold": 0.35
+      },
+      {
+        "f1": 0.107,
+        "flagged_rate": 0.0148,
+        "precision": 0.4775,
+        "recall": 0.0602,
+        "threshold": 0.4
+      },
+      {
+        "f1": 0.072,
+        "flagged_rate": 0.0087,
+        "precision": 0.5231,
+        "recall": 0.0386,
+        "threshold": 0.45
+      },
+      {
+        "f1": 0.0396,
+        "flagged_rate": 0.004,
+        "precision": 0.6,
+        "recall": 0.0205,
+        "threshold": 0.5
+      },
+      {
+        "f1": 0.0333,
+        "flagged_rate": 0.0029,
+        "precision": 0.6818,
+        "recall": 0.017,
+        "threshold": 0.55
+      },
+      {
+        "f1": 0.0246,
+        "flagged_rate": 0.0019,
+        "precision": 0.7857,
+        "recall": 0.0125,
+        "threshold": 0.6
+      }
+    ]
+  },
+  "trained_on": "training split only (35,000 rows); choices on validation; test scored once"
+}
