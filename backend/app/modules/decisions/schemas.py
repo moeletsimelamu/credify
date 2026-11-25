@@ -28,6 +28,8 @@ class RecommendationCreate(BaseModel):
     recommendation: Recommendation
     rationale: Rationale
     affordability_assessment_id: uuid.UUID
+    # Required when a scored credit-risk assessment exists: it must be the latest one.
+    credit_risk_assessment_id: uuid.UUID | None = None
 
 
 class RecommendationRead(BaseModel):
@@ -38,6 +40,7 @@ class RecommendationRead(BaseModel):
     recommendation: Recommendation
     rationale: str
     affordability_assessment_id: uuid.UUID
+    credit_risk_assessment_id: uuid.UUID | None
     created_at: datetime
 
 
@@ -59,6 +62,7 @@ class DecisionCreate(BaseModel):
     reason_codes: Annotated[list[str], Field(max_length=10)]
     explanation: Explanation
     affordability_assessment_id: uuid.UUID
+    credit_risk_assessment_id: uuid.UUID | None = None
     model_output_acknowledged: bool
     approved_amount: PositiveMoney | None = None
     approved_term_months: Annotated[int, Field(ge=1, le=120)] | None = None
@@ -78,6 +82,8 @@ class DecisionRead(BaseModel):
     explanation: str
     model_acknowledged: bool
     departs_from_recommendation: bool
+    credit_risk_assessment_id: uuid.UUID | None
+    departs_from_model: bool | None
     approved_amount: MoneyAmount | None
     approved_term_months: int | None
     created_at: datetime

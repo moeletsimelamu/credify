@@ -31,7 +31,10 @@ class LoanRecommendation(UUIDPrimaryKey, CreatedAt, Base):
     affordability_assessment_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("affordability_assessments.id", ondelete="RESTRICT")
     )
-    # credit_risk_assessment_id joins in Phase 7 with the credit_risk_assessments table.
+    # The latest scored risk assessment when recommending (None if scoring failed).
+    credit_risk_assessment_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("credit_risk_assessments.id", ondelete="RESTRICT")
+    )
 
 
 class LendingDecision(UUIDPrimaryKey, CreatedAt, Base):
@@ -72,4 +75,9 @@ class LendingDecision(UUIDPrimaryKey, CreatedAt, Base):
     departs_from_recommendation: Mapped[bool]
     approved_amount: Mapped[Decimal | None] = mapped_column(money_type())
     approved_term_months: Mapped[int | None] = mapped_column(SmallInteger)
-    # credit_risk_assessment_id and departs_from_model join in Phase 7 with the model.
+    # The scored risk assessment reviewed, and whether the decision goes against its guidance.
+    # Both NULL when no scored assessment existed (scoring is advisory and may fail).
+    credit_risk_assessment_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("credit_risk_assessments.id", ondelete="RESTRICT")
+    )
+    departs_from_model: Mapped[bool | None]

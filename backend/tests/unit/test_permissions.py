@@ -41,6 +41,12 @@ def test_every_role_has_a_permission_set() -> None:
         (Role.LOAN_OFFICER, P.LOAN_READ_ANY, True),
         (Role.CREDIT_ANALYST, P.LOAN_READ_ANY, True),
         (Role.APPLICANT, P.LOAN_READ_ANY, False),
+        # Only administrators activate models; analysts may inspect them.
+        (Role.ADMIN, P.MODEL_MANAGE, True),
+        (Role.CREDIT_ANALYST, P.MODEL_MANAGE, False),
+        (Role.LOAN_OFFICER, P.MODEL_MANAGE, False),
+        (Role.CREDIT_ANALYST, P.ANALYTICS_MODEL, True),
+        (Role.LOAN_OFFICER, P.ANALYTICS_MODEL, False),
         (Role.CREDIT_ANALYST, P.REPAYMENT_RECORD, False),
         (Role.LOAN_OFFICER, P.LOAN_DISBURSE, True),
         (Role.CREDIT_ANALYST, P.LOAN_DISBURSE, False),

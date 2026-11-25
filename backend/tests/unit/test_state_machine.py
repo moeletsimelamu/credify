@@ -91,6 +91,7 @@ PASSING = TransitionFacts(
     expense_records=1,
     records_in_other_currencies=0,
     has_affordability_assessment=True,
+    risk_assessment_attempted=True,
     assigned_officer_id=OFFICER_ID,
     message="Please upload your latest three payslips.",
     open_information_requests=0,
@@ -263,6 +264,29 @@ def test_submit_reports_every_problem_at_once() -> None:
         S.DRAFT, A.SUBMIT, OWNER, employment_records=0, income_records=0, expense_records=0
     )
     assert len(violations) == 3
+
+
+def test_queue_requires_a_risk_attempt() -> None:
+    violations = _violations(
+        S.SUBMITTED, A.QUEUE_FOR_REVIEW, SYSTEM, risk_assessment_attempted=False
+    )
+    assert violations == ["a credit-risk assessment must be attempted first"]
+
+
+@pytest.mark.parametrize("action", [A.RECOMMEND_APPROVAL, A.APPROVE, A.DECLINE])
+def test_latest_scored_risk_assessment_must_be_cited(action: Action) -> None:
+    status = S.UNDER_REVIEW if action is A.RECOMMEND_APPROVAL else S.RECOMMENDED_APPROVAL
+    actor = OFFICER if action is A.RECOMMEND_APPROVAL else ANALYST
+    base = replace(_facts(action), recommender_id=OTHER_OFFICER_ID)
+    stale = replace(base, latest_risk_version=2, reviewed_risk_version=1)
+    with pytest.raises(GuardViolationError) as excinfo:
+        transition(status, action, actor, stale)
+    assert any("latest credit-risk assessment (version 2)" in v for v in excinfo.value.violations)
+    # Citing it passes; with no scored assessment there is nothing to cite.
+    assert transition(
+        status, action, actor, replace(base, latest_risk_version=2, reviewed_risk_version=2)
+    )
+    assert transition(status, action, actor, base)
 
 
 def test_queue_requires_affordability_assessment() -> None:

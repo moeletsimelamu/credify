@@ -7,6 +7,7 @@ misconfigured deployment fails loudly instead of running with weak defaults.
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pydantic import Field, PostgresDsn, SecretStr, field_validator, model_validator
@@ -35,6 +36,9 @@ class Settings(BaseSettings):
     log_json: bool = True
     login_max_attempts: int = Field(default=5, ge=1, le=20)
     login_lockout_minutes: int = Field(default=15, ge=1, le=1440)
+    # Read-only directory holding registered model artefacts (docs/ML_STRATEGY.md §9). Unset:
+    # no model can be loaded, and scoring attempts are recorded as FAILED.
+    model_dir: Path | None = None
 
     @field_validator("jwt_secret")
     @classmethod

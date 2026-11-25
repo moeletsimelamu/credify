@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.core.ids import uuid7
 from app.modules.audit import service as audit
+from app.modules.credit_risk.models import CreditRiskAssessment
 from app.modules.decisions.domain.reason_codes import DecisionOutcome, Recommendation
 from app.modules.decisions.models import LendingDecision, LoanRecommendation
 from app.modules.identity.models import User
@@ -29,6 +30,7 @@ def record_recommendation(
     recommendation: Recommendation,
     rationale: str,
     affordability_assessment_id: uuid.UUID,
+    credit_risk_assessment_id: uuid.UUID | None,
     actor: User,
     now: datetime,
     ip_address: str | None,
@@ -40,6 +42,7 @@ def record_recommendation(
         recommendation=recommendation,
         rationale=rationale.strip(),
         affordability_assessment_id=affordability_assessment_id,
+        credit_risk_assessment_id=credit_risk_assessment_id,
         created_at=now,
     )
     session.add(row)
@@ -56,9 +59,21 @@ def record_recommendation(
             "application_id": application_id,
             "recommendation": recommendation.value,
             "affordability_assessment_id": affordability_assessment_id,
+            "credit_risk_assessment_id": credit_risk_assessment_id,
         },
     )
     return row
+
+
+def departs_from_model(decision: DecisionOutcome, risk: CreditRiskAssessment | None) -> bool | None:
+    """Whether the decision goes against the model's guidance (None without a scored model).
+
+    The guidance is "review carefully" when the PD is at or above the operating threshold
+    (bands D and E): approving such an application, or declining one below it, departs.
+    """
+    if risk is None or risk.above_threshold is None:
+        return None
+    return risk.above_threshold == (decision is DecisionOutcome.APPROVED)
 
 
 def record_decision(
@@ -68,6 +83,7 @@ def record_decision(
     decision: DecisionOutcome,
     recommendation: LoanRecommendation,
     affordability_assessment_id: uuid.UUID,
+    credit_risk_assessment: CreditRiskAssessment | None,
     reason_codes: Sequence[str],
     explanation: str,
     approved_amount: Decimal | None,
@@ -90,6 +106,8 @@ def record_decision(
         explanation=explanation.strip(),
         model_acknowledged=True,
         departs_from_recommendation=not follows,
+        credit_risk_assessment_id=credit_risk_assessment.id if credit_risk_assessment else None,
+        departs_from_model=departs_from_model(decision, credit_risk_assessment),
         approved_amount=approved_amount,
         approved_term_months=approved_term_months,
         created_at=now,
@@ -111,6 +129,10 @@ def record_decision(
             "recommendation_id": recommendation.id,
             "recommended_by": recommendation.recommended_by,
             "departs_from_recommendation": not follows,
+            "credit_risk_assessment_id": (
+                credit_risk_assessment.id if credit_risk_assessment else None
+            ),
+            "departs_from_model": departs_from_model(decision, credit_risk_assessment),
             "approved_amount": approved_amount,
             "approved_term_months": approved_term_months,
         },

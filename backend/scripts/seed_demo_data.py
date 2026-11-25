@@ -553,8 +553,12 @@ class Demo:
                 return
 
 
+# Registered models survive a reset: they come from the offline pipeline, not the demo.
+KEEP_ON_RESET = frozenset({"model_versions"})
+
+
 def _reset(session: Session) -> None:
-    tables = [t.name for t in reversed(Base.metadata.sorted_tables)]
+    tables = [t.name for t in reversed(Base.metadata.sorted_tables) if t.name not in KEEP_ON_RESET]
     session.execute(text(f"TRUNCATE {', '.join(tables)} RESTART IDENTITY CASCADE"))
     for sequence in ("loan_application_reference_seq", "loan_account_number_seq"):
         session.execute(text(f"ALTER SEQUENCE {sequence} RESTART WITH 1"))
@@ -572,6 +576,7 @@ def _write_credentials(path: Path, demo: Demo, seed: int) -> None:
     lines += [
         f"{c.role.value:<16} {c.name:<28} {c.email:<40} {c.password}" for c in demo.credentials
     ]
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     path.chmod(0o600)
 

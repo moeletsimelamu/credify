@@ -20,6 +20,7 @@ from app.modules.analytics.router import router as analytics_router
 from app.modules.applicants.router import router as applicants_router
 from app.modules.applications.router import router as applications_router
 from app.modules.audit.router import router as audit_router
+from app.modules.credit_risk.router import router as models_router
 from app.modules.decisions.router import router as decisions_router
 from app.modules.identity.router import auth_router, users_router
 from app.modules.loans.router import accounts as loan_accounts_router
@@ -40,6 +41,7 @@ def build_api_router() -> APIRouter:
     router.include_router(loans_router)
     router.include_router(loan_accounts_router)
     router.include_router(analytics_router)
+    router.include_router(models_router)
     router.include_router(audit_router)
     return router
 

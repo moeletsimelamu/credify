@@ -36,6 +36,9 @@ TEST_JWT_SECRET = secrets.token_urlsafe(48)
 DEFAULT_PASSWORD = "correct-horse-battery-staple"
 TABLES = (
     "audit_events",
+    "credit_risk_assessments",
+    "credit_bureau_reports",
+    "model_versions",
     "payment_allocations",
     "loan_charges",
     "loan_transactions",

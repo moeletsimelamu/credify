@@ -159,6 +159,7 @@ class TransitionFacts:
     records_in_other_currencies: int = 0
     # QUEUE_FOR_REVIEW
     has_affordability_assessment: bool = False
+    risk_assessment_attempted: bool = False  # attempted, not necessarily scored (advisory)
     # START_REVIEW
     assigned_officer_id: uuid.UUID | None = None
     # REQUEST_INFORMATION / SEND_BACK
@@ -170,6 +171,10 @@ class TransitionFacts:
     rationale: str | None = None
     reviewed_affordability_version: int | None = None
     latest_affordability_version: int | None = None
+    # The latest *scored* credit-risk assessment, if any. None means there is none to cite:
+    # scoring is advisory and may have failed, which never blocks a human decision.
+    reviewed_risk_version: int | None = None
+    latest_risk_version: int | None = None
     # APPROVE / DECLINE
     recommender_id: uuid.UUID | None = None
     reason_codes: tuple[str, ...] = field(default_factory=tuple)
@@ -243,9 +248,12 @@ def _guard_submit(facts: TransitionFacts, _: Actor) -> list[str]:
 
 
 def _guard_queue(facts: TransitionFacts, _: Actor) -> list[str]:
+    problems = []
     if not facts.has_affordability_assessment:
-        return ["an affordability assessment must be recorded first"]
-    return []
+        problems.append("an affordability assessment must be recorded first")
+    if not facts.risk_assessment_attempted:
+        problems.append("a credit-risk assessment must be attempted first")
+    return problems
 
 
 def _guard_start_review(facts: TransitionFacts, actor: Actor) -> list[str]:
@@ -280,8 +288,15 @@ def _evidence_problems(facts: TransitionFacts, step: str) -> list[str]:
     return []
 
 
+def _risk_problems(facts: TransitionFacts, step: str) -> list[str]:
+    latest = facts.latest_risk_version
+    if latest is not None and facts.reviewed_risk_version != latest:
+        return [f"review the latest credit-risk assessment (version {latest}) before {step}"]
+    return []
+
+
 def _guard_recommend(facts: TransitionFacts, _: Actor) -> list[str]:
-    problems = _evidence_problems(facts, "recommending")
+    problems = _evidence_problems(facts, "recommending") + _risk_problems(facts, "recommending")
     if _blank(facts.rationale) or len((facts.rationale or "").strip()) < MIN_RATIONALE_LENGTH:
         problems.append(f"a rationale of at least {MIN_RATIONALE_LENGTH} characters is required")
     return problems
@@ -301,7 +316,7 @@ def _decide_guard(outcome: DecisionOutcome) -> Guard:
             problems.append("a recommendation must be recorded before a decision")
         elif facts.recommender_id == actor.user_id:
             problems.append("the decision must be made by someone other than the recommender")
-        problems += _evidence_problems(facts, "deciding")
+        problems += _evidence_problems(facts, "deciding") + _risk_problems(facts, "deciding")
         if not facts.reason_codes:
             problems.append("at least one reason code is required")
         else:

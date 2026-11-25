@@ -17,6 +17,11 @@ from app.modules.applications.models import (
     ReviewNote,
 )
 from app.modules.audit.models import AuditEvent
+from app.modules.credit_risk.models import (
+    CreditBureauReport,
+    CreditRiskAssessment,
+    ModelVersion,
+)
 from app.modules.decisions.models import LendingDecision, LoanRecommendation
 from app.modules.identity.models import RefreshToken, User
 from app.modules.loans.models import (
@@ -35,7 +40,9 @@ __all__ = [
     "ApplicationStatusHistory",
     "AuditEvent",
     "Base",
+    "CreditBureauReport",
     "CreditCommitment",
+    "CreditRiskAssessment",
     "DocumentReference",
     "EmploymentRecord",
     "ExpenseRecord",
@@ -48,6 +55,7 @@ __all__ = [
     "LoanProduct",
     "LoanRecommendation",
     "LoanTransaction",
+    "ModelVersion",
     "PaymentAllocation",
     "RefreshToken",
     "RepaymentSchedule",

@@ -20,6 +20,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from datetime import date, datetime
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy import Select, func, select
@@ -73,6 +74,13 @@ from app.modules.applications.schemas import (
     DocumentCreate,
 )
 from app.modules.audit import service as audit
+from app.modules.credit_risk import service as credit_risk
+from app.modules.credit_risk.models import (
+    AssessmentStatus,
+    CreditBureauReport,
+    CreditRiskAssessment,
+    RiskRunReason,
+)
 from app.modules.decisions import service as decisions
 from app.modules.decisions.domain.reason_codes import DecisionOutcome, ReasonCode, Recommendation
 from app.modules.decisions.models import LendingDecision, LoanRecommendation
@@ -126,6 +134,7 @@ class Context:
     user: User
     clock: Clock
     ip_address: str | None
+    model_dir: Path | None = None  # read-only model artefacts (credit-risk scoring)
 
     def now(self) -> datetime:
         return self.clock.now()
@@ -454,17 +463,24 @@ def submit(
     application.product_terms_snapshot = products.terms_snapshot(product, captured_at=now)
     _record_transition(session, application, change, ctx)
 
-    # Automatic step: assess, then queue. Same transaction, so the review queue never holds
-    # an application without an affordability assessment.
+    # Automatic steps: assess affordability, attempt risk scoring, then queue. Same
+    # transaction, so the review queue never holds an unassessed application. A failed risk
+    # score is recorded and does not stop the application reaching a human.
     assessment = _record_affordability(session, application, ctx, RunReason.SUBMISSION)
+    risk = _record_risk(session, application, ctx, RiskRunReason.SUBMISSION)
     queued = _apply(
         application,
         Action.QUEUE_FOR_REVIEW,
         Actor.system(),
-        TransitionFacts(has_affordability_assessment=True),
+        TransitionFacts(has_affordability_assessment=True, risk_assessment_attempted=True),
     )
     _record_transition(
-        session, application, queued, ctx, reason=_assessed(assessment), by_system=True
+        session,
+        application,
+        queued,
+        ctx,
+        reason=f"{_assessed(assessment)}; {_risk_summary(risk)}",
+        by_system=True,
     )
     session.commit()
     session.refresh(application)
@@ -498,6 +514,32 @@ def _record_affordability(
         as_of=business_date(ctx.clock),
         ip_address=ctx.ip_address if requested_by else None,
     )
+
+
+def _record_risk(
+    session: Session,
+    application: LoanApplication,
+    ctx: Context,
+    run_reason: RiskRunReason,
+    *,
+    requested_by: User | None = None,
+) -> CreditRiskAssessment:
+    return credit_risk.score(
+        session,
+        application,
+        run_reason=run_reason,
+        requested_by=requested_by,
+        now=ctx.now(),
+        today=business_date(ctx.clock),
+        model_dir=ctx.model_dir,
+        ip_address=ctx.ip_address if requested_by else None,
+    )
+
+
+def _risk_summary(risk: CreditRiskAssessment) -> str:
+    if risk.status is AssessmentStatus.SCORED and risk.risk_band is not None:
+        return f"credit-risk v{risk.version}: band {risk.risk_band.value} (advisory)"
+    return f"credit-risk v{risk.version}: not scored ({risk.failure_reason})"
 
 
 def _assessed(assessment: AffordabilityAssessment) -> str:
@@ -543,7 +585,10 @@ def resume_review(
         application, Action.RESUME_REVIEW, actor, replace(facts, assessments_refreshed=True)
     )
     assessment = _record_affordability(session, application, ctx, RunReason.RESUBMISSION)
-    _record_transition(session, application, change, ctx, reason=_assessed(assessment))
+    risk = _record_risk(session, application, ctx, RiskRunReason.RESUBMISSION)
+    _record_transition(
+        session, application, change, ctx, reason=f"{_assessed(assessment)}; {_risk_summary(risk)}"
+    )
     session.commit()
     session.refresh(application)
     return application
@@ -567,6 +612,48 @@ def run_affordability(
     )
     session.commit()
     return assessment
+
+
+def run_risk(session: Session, application_id: uuid.UUID, ctx: Context) -> CreditRiskAssessment:
+    """A credit analyst's re-run on the current profile. Creates a new version."""
+    application = load(session, application_id, ctx.user, for_update=True).application
+    if application.status not in ASSESSABLE:
+        raise InvalidTransitionError(
+            f"Credit risk cannot be re-run while the application is {application.status.value}",
+            extra={"status": application.status.value},
+        )
+    assessment = _record_risk(
+        session, application, ctx, RiskRunReason.STAFF_REQUEST, requested_by=ctx.user
+    )
+    session.commit()
+    return assessment
+
+
+def list_risk(
+    session: Session, application_id: uuid.UUID, user: User
+) -> Sequence[CreditRiskAssessment]:
+    load(session, application_id, user)
+    return credit_risk.list_assessments(session, application_id)
+
+
+def get_risk(
+    session: Session, application_id: uuid.UUID, assessment_id: uuid.UUID, user: User
+) -> CreditRiskAssessment:
+    load(session, application_id, user)
+    assessment = credit_risk.get_assessment(session, application_id, assessment_id)
+    if assessment is None:
+        raise NotFoundError("Credit-risk assessment not found")
+    return assessment
+
+
+def get_bureau_report(
+    session: Session, application_id: uuid.UUID, user: User
+) -> CreditBureauReport:
+    load(session, application_id, user)
+    report = credit_risk.bureau_report(session, application_id)
+    if report is None:
+        raise NotFoundError("No simulated bureau report has been pulled for this application")
+    return report
 
 
 def list_affordability(
@@ -787,6 +874,32 @@ def _evidence_versions(
     return cited, affordability.latest_version(session, application.id)
 
 
+@dataclass(frozen=True, slots=True)
+class RiskEvidence:
+    """The scored risk assessment cited (if any) and the latest scored one (if any)."""
+
+    cited: CreditRiskAssessment | None
+    latest: CreditRiskAssessment | None
+
+    @property
+    def reviewed_version(self) -> int | None:
+        return self.cited.version if self.cited else None
+
+    @property
+    def latest_version(self) -> int | None:
+        return self.latest.version if self.latest else None
+
+
+def _risk_evidence(
+    session: Session, application: LoanApplication, cited_id: uuid.UUID | None
+) -> RiskEvidence:
+    cited = None
+    if cited_id is not None:
+        found = credit_risk.get_assessment(session, application.id, cited_id)
+        cited = found if found is not None and found.status is AssessmentStatus.SCORED else None
+    return RiskEvidence(cited, credit_risk.latest_scored(session, application.id))
+
+
 def recommend(
     session: Session,
     application_id: uuid.UUID,
@@ -798,6 +911,7 @@ def recommend(
     loaded = _load_for_staff(session, application_id, ctx, expected_version)
     application = loaded.application
     cited, latest = _evidence_versions(session, application, data.affordability_assessment_id)
+    risk = _risk_evidence(session, application, data.credit_risk_assessment_id)
     change = _apply(
         application,
         RECOMMEND_ACTIONS[data.recommendation],
@@ -806,6 +920,8 @@ def recommend(
             rationale=data.rationale,
             reviewed_affordability_version=cited.version if cited else None,
             latest_affordability_version=latest,
+            reviewed_risk_version=risk.reviewed_version,
+            latest_risk_version=risk.latest_version,
         ),
     )
     assert cited is not None  # noqa: S101 — the guard rejects a missing or stale citation
@@ -815,6 +931,7 @@ def recommend(
         recommendation=data.recommendation,
         rationale=data.rationale,
         affordability_assessment_id=cited.id,
+        credit_risk_assessment_id=risk.cited.id if risk.cited else None,
         actor=ctx.user,
         now=ctx.now(),
         ip_address=ctx.ip_address,
@@ -902,6 +1019,7 @@ def decide(
     action = DECISION_ACTIONS[data.decision]
     recommendation = decisions.latest_recommendation(session, application.id)
     cited, latest = _evidence_versions(session, application, data.affordability_assessment_id)
+    risk = _risk_evidence(session, application, data.credit_risk_assessment_id)
     codes = tuple(data.reason_codes)
 
     approved_amount: Decimal | None = None
@@ -924,6 +1042,8 @@ def decide(
         model_output_acknowledged=data.model_output_acknowledged,
         reviewed_affordability_version=cited.version if cited else None,
         latest_affordability_version=latest,
+        reviewed_risk_version=risk.reviewed_version,
+        latest_risk_version=risk.latest_version,
     )
     try:
         change = _apply(application, action, loaded.actor_for(ctx.user), facts)
@@ -948,6 +1068,7 @@ def decide(
         decision=data.decision,
         recommendation=recommendation,
         affordability_assessment_id=cited.id,
+        credit_risk_assessment=risk.cited,
         reason_codes=codes,
         explanation=data.explanation,
         approved_amount=approved_amount,

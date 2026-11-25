@@ -33,6 +33,7 @@ class Permission(StrEnum):
     REPAYMENT_RECORD_OWN = "repayment:record_own"
     ANALYTICS_PORTFOLIO = "analytics:portfolio"
     ANALYTICS_MODEL = "analytics:model"
+    MODEL_MANAGE = "model:manage"  # activate a registered model version (audited)
 
 
 P = Permission
@@ -53,6 +54,7 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
             P.REPAYMENT_RECORD,
             P.ANALYTICS_PORTFOLIO,
             P.ANALYTICS_MODEL,
+            P.MODEL_MANAGE,
         }
     ),
     Role.LOAN_OFFICER: frozenset(

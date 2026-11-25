@@ -18,6 +18,7 @@ FINANCIAL_PACKAGES = (
     APP / "modules" / "applicants" / "domain",
     APP / "modules" / "applications" / "domain",
     APP / "modules" / "decisions" / "domain",
+    APP / "modules" / "credit_risk" / "domain",
 )
 SOURCES = sorted(path for package in FINANCIAL_PACKAGES for path in package.rglob("*.py"))
 

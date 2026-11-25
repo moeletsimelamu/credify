@@ -45,6 +45,8 @@ from app.modules.applications.schemas import (
     StatusHistoryRead,
     WithdrawRequest,
 )
+from app.modules.credit_risk.models import CreditBureauReport, CreditRiskAssessment
+from app.modules.credit_risk.schemas import BureauReportRead, RiskAssessmentRead
 from app.modules.decisions.domain.reason_codes import ReasonCode
 from app.modules.decisions.models import LendingDecision, LoanRecommendation
 from app.modules.decisions.schemas import (
@@ -72,10 +74,16 @@ _recommend = require(Permission.APPLICATION_RECOMMEND)
 _decide = require(Permission.APPLICATION_DECIDE)
 _disburse = require(Permission.LOAN_DISBURSE)
 _read_any = require(Permission.APPLICATION_READ_ANY)
+_run_risk = require(Permission.RISK_RUN)
 
 
 def _ctx(request: Request, user: User, clock: Clock) -> service.Context:
-    return service.Context(user=user, clock=clock, ip_address=client_ip(request))
+    return service.Context(
+        user=user,
+        clock=clock,
+        ip_address=client_ip(request),
+        model_dir=request.app.state.settings.model_dir,
+    )
 
 
 def _detail(session: Session, application: LoanApplication, user: User) -> ApplicationDetail:
@@ -571,3 +579,52 @@ def get_loan_account(
     user: User = Depends(get_current_user),
 ) -> LoanAccountRead:
     return LoanAccountRead.model_validate(service.get_loan_account(session, application_id, user))
+
+
+# --- Credit risk (experimental, advisory; staff only) -----------------------------------
+
+
+@router.get("/{application_id}/risk-assessments", response_model=list[RiskAssessmentRead])
+def list_risk_assessments(
+    application_id: uuid.UUID,
+    session: Session = Depends(get_session),
+    user: User = Depends(_read_any),
+) -> Sequence[CreditRiskAssessment]:
+    """Every scoring attempt, newest first, including failures and their reasons."""
+    return service.list_risk(session, application_id, user)
+
+
+@router.post(
+    "/{application_id}/risk-assessments",
+    response_model=RiskAssessmentRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def run_risk_assessment(
+    application_id: uuid.UUID,
+    request: Request,
+    session: Session = Depends(get_session),
+    clock: Clock = Depends(get_clock),
+    user: User = Depends(_run_risk),
+) -> CreditRiskAssessment:
+    """Re-score with the active model. A failed attempt is recorded too (status FAILED)."""
+    return service.run_risk(session, application_id, _ctx(request, user, clock))
+
+
+@router.get("/{application_id}/risk-assessments/{assessment_id}", response_model=RiskAssessmentRead)
+def get_risk_assessment(
+    application_id: uuid.UUID,
+    assessment_id: uuid.UUID,
+    session: Session = Depends(get_session),
+    user: User = Depends(_read_any),
+) -> CreditRiskAssessment:
+    return service.get_risk(session, application_id, assessment_id, user)
+
+
+@router.get("/{application_id}/credit-bureau-report", response_model=BureauReportRead)
+def get_credit_bureau_report(
+    application_id: uuid.UUID,
+    session: Session = Depends(get_session),
+    user: User = Depends(_read_any),
+) -> CreditBureauReport:
+    """The SIMULATED bureau report pulled at submission (no real bureau is contacted)."""
+    return service.get_bureau_report(session, application_id, user)

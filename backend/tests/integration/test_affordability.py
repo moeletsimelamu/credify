@@ -134,7 +134,10 @@ def test_submission_records_assessment_v1_and_queues(
         )
     ).one()
     assert queued.actor_user_id is None
-    assert queued.reason == "Affordability assessment v1: AFFORDABLE"
+    assert queued.reason == (
+        "Affordability assessment v1: AFFORDABLE; "
+        "credit-risk v1: not scored (no credit-risk model is active)"
+    )
     event = db_session.scalars(
         select(AuditEvent).where(AuditEvent.action == "affordability_assessment.created")
     ).one()
@@ -311,7 +314,10 @@ def test_resume_review_reassesses_the_updated_profile(
         "PENDING_REVIEW",
     ]
     assert history[-1].actor_user_id == borrower.party.user.id
-    assert history[-1].reason == "Affordability assessment v2: AFFORDABLE"
+    assert history[-1].reason == (
+        "Affordability assessment v2: AFFORDABLE; "
+        "credit-risk v2: not scored (no credit-risk model is active)"
+    )
 
     # The profile is locked again, and resuming twice is not a valid move.
     locked = client.post(

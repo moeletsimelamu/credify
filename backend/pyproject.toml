@@ -15,6 +15,10 @@ dependencies = [
     "argon2-cffi>=23.1",
     "pyjwt>=2.10",
     "structlog>=24.4",
+    "scikit-learn==1.9.1",
+    "numpy>=2.1",
+    "pandas>=2.2",
+    "joblib>=1.4",
 ]
 
 [dependency-groups]
@@ -26,6 +30,7 @@ dev = [
     "mypy>=1.13",
     "hypothesis>=6.170.17",
     "numpy-financial>=1.0.0",
+    "pandas-stubs>=2.2",
 ]
 
 [build-system]
@@ -68,7 +73,7 @@ warn_unreachable = true
 exclude = ["migrations/"]
 
 [[tool.mypy.overrides]]
-module = ["numpy_financial"]  # test-only dependency without type information
+module = ["numpy_financial", "sklearn.*", "joblib"]  # no type information shipped
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
