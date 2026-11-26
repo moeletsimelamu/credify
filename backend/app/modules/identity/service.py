@@ -368,3 +368,14 @@ def update_user(
     )
     session.commit()
     return user
+
+
+def list_staff(session: Session) -> list[User]:
+    """Active back-office users, for name lookups and the assignment picker."""
+    return list(
+        session.scalars(
+            select(User)
+            .where(User.is_active.is_(True), User.role != Role.APPLICANT)
+            .order_by(User.full_name, User.id)
+        ).all()
+    )

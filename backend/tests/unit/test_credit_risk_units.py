@@ -160,3 +160,14 @@ def test_bands_and_tenure() -> None:
     assert months_between(date(2024, 1, 31), date(2024, 2, 29)) == 0
     assert months_between(date(2024, 1, 15), date(2025, 1, 15)) == 12
     assert months_between(date(2030, 1, 1), date(2025, 1, 1)) == 0
+
+
+def test_applicant_visible_reason_drops_only_the_credit_risk_summary() -> None:
+    from app.modules.applications.service import applicant_visible_reason
+
+    staff = "Affordability assessment v2: MARGINAL; credit-risk v3: band D (advisory)"
+    assert applicant_visible_reason(staff) == "Affordability assessment v2: MARGINAL"
+    failed = "Affordability assessment v1: AFFORDABLE; credit-risk v1: not scored (no model)"
+    assert applicant_visible_reason(failed) == "Affordability assessment v1: AFFORDABLE"
+    assert applicant_visible_reason("Applicant withdrew") == "Applicant withdrew"
+    assert applicant_visible_reason(None) is None

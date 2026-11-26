@@ -22,7 +22,6 @@ from app.modules.affordability.schemas import AffordabilityAssessmentRead
 from app.modules.applications import service
 from app.modules.applications.domain.state_machine import ApplicationStatus
 from app.modules.applications.models import (
-    ApplicationStatusHistory,
     DocumentReference,
     InformationRequest,
     LoanApplication,
@@ -59,7 +58,7 @@ from app.modules.decisions.schemas import (
     SendBackRequest,
 )
 from app.modules.identity.dependencies import get_current_user, require
-from app.modules.identity.models import User
+from app.modules.identity.models import Role, User
 from app.modules.identity.permissions import Permission
 from app.modules.loans.schemas import LoanAccountRead, RepaymentSchedulePreview
 
@@ -365,8 +364,17 @@ def list_status_history(
     application_id: uuid.UUID,
     session: Session = Depends(get_session),
     user: User = Depends(get_current_user),
-) -> Sequence[ApplicationStatusHistory]:
-    return service.list_history(session, application_id, user)
+) -> list[StatusHistoryRead]:
+    entries = [
+        StatusHistoryRead.model_validate(row)
+        for row in service.list_history(session, application_id, user)
+    ]
+    if user.role is Role.APPLICANT:  # the experimental score stays with staff
+        return [
+            entry.model_copy(update={"reason": service.applicant_visible_reason(entry.reason)})
+            for entry in entries
+        ]
+    return entries
 
 
 @router.get("/{application_id}/information-requests", response_model=list[InformationRequestRead])

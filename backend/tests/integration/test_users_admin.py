@@ -130,3 +130,29 @@ def test_unknown_user_returns_problem_404(client: TestClient, admin_token: str):
     )
     assert response.status_code == 404
     assert response.json()["code"] == "NOT_FOUND"
+
+
+def test_staff_directory_lists_active_staff_without_emails(
+    client: TestClient, make_user: Callable[..., User]
+):
+    officer = make_user(Role.LOAN_OFFICER)
+    analyst = make_user(Role.CREDIT_ANALYST)
+    inactive = make_user(Role.LOAN_OFFICER, is_active=False)
+    applicant = make_user(Role.APPLICANT)
+
+    response = client.get("/api/v1/staff", headers=bearer(login(client, analyst.email)))
+
+    assert response.status_code == 200, response.text
+    listed = {row["id"]: row for row in response.json()}
+    assert str(officer.id) in listed
+    assert str(analyst.id) in listed
+    assert str(inactive.id) not in listed
+    assert str(applicant.id) not in listed
+    assert set(listed[str(officer.id)]) == {"id", "full_name", "role"}
+
+
+def test_applicants_cannot_read_the_staff_directory(
+    client: TestClient, make_user: Callable[..., User]
+):
+    token = login(client, make_user(Role.APPLICANT).email)
+    assert client.get("/api/v1/staff", headers=bearer(token)).status_code == 403

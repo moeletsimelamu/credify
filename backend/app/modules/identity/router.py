@@ -18,6 +18,7 @@ from app.modules.identity.schemas import (
     CurrentUserRead,
     LoginRequest,
     RegisterRequest,
+    StaffMemberRead,
     TokenResponse,
     UserCreate,
     UserRead,
@@ -29,6 +30,7 @@ REFRESH_COOKIE_PATH = "/api/v1/auth"
 
 auth_router = APIRouter(prefix="/auth", tags=["auth"])
 users_router = APIRouter(prefix="/users", tags=["users"])
+staff_router = APIRouter(prefix="/staff", tags=["users"])
 
 
 def _meta(request: Request) -> service.RequestMeta:
@@ -189,3 +191,12 @@ def update_user(
     return service.update_user(
         session, user_id, data, actor=actor, clock=clock, meta=_meta(request)
     )
+
+
+@staff_router.get("", response_model=list[StaffMemberRead])
+def list_staff(
+    session: Session = Depends(get_session),
+    _: User = Depends(require(Permission.APPLICATION_READ_ANY)),
+) -> list[User]:
+    """Active staff names and roles (no emails), for any back-office user."""
+    return service.list_staff(session)

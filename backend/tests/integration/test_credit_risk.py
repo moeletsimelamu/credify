@@ -217,6 +217,10 @@ def test_submission_is_scored_with_an_exact_explanation(
     assert abs(expected - probability) < 1e-6
     history = client.get(_url(application, "/status-history"), headers=analyst.headers).json()
     assert f"band {risk['risk_band']} (advisory)" in history[-1]["reason"]
+    # The applicant sees the same history without the experimental score.
+    own = client.get(_url(application, "/status-history"), headers=borrower.party.headers).json()
+    assert own[-1]["reason"] == "Affordability assessment v1: AFFORDABLE"
+    assert not any("credit-risk" in (entry["reason"] or "") for entry in own)
 
 
 def test_staff_rerun_and_who_may_see_it(

@@ -22,7 +22,7 @@ from app.modules.applications.router import router as applications_router
 from app.modules.audit.router import router as audit_router
 from app.modules.credit_risk.router import router as models_router
 from app.modules.decisions.router import router as decisions_router
-from app.modules.identity.router import auth_router, users_router
+from app.modules.identity.router import auth_router, staff_router, users_router
 from app.modules.loans.router import accounts as loan_accounts_router
 from app.modules.loans.router import router as loans_router
 from app.modules.products.router import router as products_router
@@ -34,6 +34,7 @@ def build_api_router() -> APIRouter:
     router = APIRouter()
     router.include_router(auth_router)
     router.include_router(users_router)
+    router.include_router(staff_router)
     router.include_router(products_router)
     router.include_router(applicants_router)
     router.include_router(applications_router)
@@ -78,7 +79,13 @@ def create_app(settings: Settings | None = None, *, clock: Clock | None = None) 
         allow_origins=settings.cors_origin_list,
         allow_credentials=True,
         allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE"],
-        allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "X-Request-ID"],
+        allow_headers=[
+            "Authorization",
+            "Content-Type",
+            "If-Match",
+            "Idempotency-Key",
+            "X-Request-ID",
+        ],
         expose_headers=["X-Request-ID"],
     )
     app.add_middleware(RequestContextMiddleware)  # added last → outermost

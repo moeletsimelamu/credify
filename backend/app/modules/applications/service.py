@@ -536,10 +536,22 @@ def _record_risk(
     )
 
 
+# System reasons read "<affordability>; credit-risk v<n>: ...". The credit-risk part is staff-only
+# (applicants never see the experimental score), so it is cut from what applicants are shown.
+_RISK_SEGMENT = "; credit-risk v"
+
+
 def _risk_summary(risk: CreditRiskAssessment) -> str:
     if risk.status is AssessmentStatus.SCORED and risk.risk_band is not None:
         return f"credit-risk v{risk.version}: band {risk.risk_band.value} (advisory)"
     return f"credit-risk v{risk.version}: not scored ({risk.failure_reason})"
+
+
+def applicant_visible_reason(reason: str | None) -> str | None:
+    """A status-history reason without the staff-only credit-risk summary."""
+    if reason is None:
+        return None
+    return reason.split(_RISK_SEGMENT, 1)[0]
 
 
 def _assessed(assessment: AffordabilityAssessment) -> str:

@@ -61,3 +61,12 @@ class UserUpdate(BaseModel):
     full_name: FullName | None = None
     role: Role | None = None
     is_active: bool | None = None
+
+
+class StaffMemberRead(BaseModel):
+    """The directory entry other staff see: enough to show a name and assign work."""
+
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    full_name: str
+    role: Role
