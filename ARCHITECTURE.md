@@ -219,6 +219,7 @@ Concurrent transitions are prevented with **optimistic locking** (`version_id` c
   - `GET /products/{id}/repayment-schedule?amount=&term_months=` and `GET /applications/{id}/repayment-schedule` (illustrative previews; nothing stored)
   - `POST /applications/{id}/risk-assessments` · `GET …/risk-assessments` · `GET …/risk-assessments/{id}` · `GET …/credit-bureau-report` (staff only)
   - `GET /models` · `GET /models/{id}` · `POST /models/{id}/activate` (administrators; no upload endpoint)
+  - `GET /staff` (active staff names and roles for any back-office user; added in Phase 8)
   - `GET /loan-accounts` · `GET /loan-accounts/{id}` · `POST /loan-accounts/{id}/repayments` and `POST /loan-accounts/{id}/settlement` (both require an `Idempotency-Key` header) · `GET /loan-accounts/{id}/schedule` (effective) · `GET …/schedules` · `GET …/schedules/{version}` · `GET …/transactions` · `GET …/charges` · `GET /loan-accounts/{id}/settlement-quote?as_of=YYYY-MM-DD`
   - `GET /analytics/portfolio?date_from=&date_to=`
 - Pagination: `?page=&page_size=` (max 100) with `total`; filtering on status, date range, product.
@@ -232,7 +233,7 @@ Concurrent transitions are prevented with **optimistic locking** (`version_id` c
 - **Password hashing:** Argon2id (`argon2-cffi`) with library-recommended parameters; rehash on login if parameters change.
 - **Tokens:** short-lived access JWT (15 min, HS256, `sub`, `role`, `exp`, `jti`) held in memory by the SPA; refresh token (opaque, 256-bit random, 7 days) in an `HttpOnly; Secure; SameSite=Strict` cookie scoped to `/api/v1/auth`, **stored hashed** and **rotated** on every use. Reuse of a revoked refresh token revokes the whole token family.
 - **Login protection:** generic error messages, per-IP + per-account attempt throttling, audit of failures.
-- **CORS** restricted to the configured frontend origin.
+- **CORS** restricted to the configured frontend origin. In practice the SPA is served on the API's origin (Vite proxy in development, nginx in Compose), so browsers make no cross-origin calls (§18).
 
 ---
 
@@ -410,3 +411,21 @@ Choices made while building applicants and applications, within the approved des
 | Reproducibility | CI regenerates the dataset and runs `train --check`, `evaluate --check` and `fairness --check`. |
 | Seed | `--reset` keeps registered models. Register and activate a model before seeding to have the demo applications scored; otherwise their assessments are recorded as `FAILED`. |
 | Details | MODEL_CARD.md, DATA_DICTIONARY.md, docs/ML_STRATEGY.md §12. |
+
+## 18. Phase 8 implementation decisions (2026-11-26)
+
+| Topic | Decision |
+|---|---|
+| Stack and versions | `frontend/`: React 19, TypeScript 5.9 (strict, `noUncheckedIndexedAccess`), Vite 7, React Router 7 (data router, lazily loaded routes), TanStack Query 5, React Hook Form 7 + Zod 4, Radix UI dialog/tabs, Recharts 3, Tailwind CSS 4, Vitest 4 + Testing Library + axe-core, all pinned exactly in `package-lock.json`. Newer majors existed (TypeScript 7, Vite 8, React Router 8); the latest releases of the previous majors were chosen because the lint, test and type tooling around them is mature and verified here. |
+| One origin | The SPA always calls `/api/v1` on its own origin. Vite proxies it in development (`CREDIFY_API_PROXY_TARGET`, default `http://127.0.0.1:8000`); the `web` container's nginx proxies it in Compose. The `SameSite=Strict` refresh cookie therefore needs no CORS, and CORS stays restricted to the configured origin for anyone who runs the SPA elsewhere (`If-Match` was added to the allowed headers for that case). |
+| Session handling | The access token lives only in memory. On load the SPA restores the session from the refresh cookie. A 401 triggers one refresh and one retry; concurrent refreshes are shared within a tab and serialised across tabs with the Web Locks API, because the server rotates refresh tokens and treats reuse as theft. An explicit sign-out returns to a clean sign-in page; an expired session returns the person to the page they were on (same-app paths only). |
+| API contract | `python -m scripts.export_openapi` writes `frontend/openapi.json`; `npm run gen:api` generates `src/api/schema.d.ts` with `openapi-typescript`. CI fails if either is stale, so the client cannot silently drift from the API. |
+| Money on the client | Amounts are displayed from the API's decimal strings with `Intl.NumberFormat` (which formats strings exactly) and typed by people as strings; the SPA never computes a financial figure. Charts plot numbers only for bar geometry, and every printed figure and tooltip shows the server's exact value. |
+| Payments | Each payment the person intends to make gets one idempotency key, reused if they retry the same payment after a failure and replaced after success or a change of amount, so a repeated click or a lost response cannot take money twice. |
+| Early payments (open item from Phase 5) | Behaviour unchanged (FINANCIAL_CALCULATIONS.md §5): the payment screens state that money paid before a due date is a prepayment that shortens the term, and point to the settlement quote for paying in full. |
+| Staff directory | New `GET /api/v1/staff` (any back-office user, `application:read_any`): active staff ids, names and roles, without emails, so the work queue and workspace can show who is assigned and officers can assign work. `/users` remains administrators-only. |
+| Applicant privacy fix | Phase 7 kept scores staff-only, but the system's status-history reason ("…; credit-risk v1: band A (advisory)") was readable by the applicant. The stored history is unchanged (it is part of the audit trail); the API now removes the credit-risk part when an applicant reads their own history. |
+| Workspace | Tabs Overview · Financial profile · Affordability · Credit risk · Decision · Loan & repayments · Audit, kept in the URL (`?tab=`), with a snapshot rail. The risk panel sits in a dashed "Experimental model output — advisory only" frame, separate from the human decision. Commands are offered from the API's `available_actions`, plus the backend's status rules for re-runs and assignment; the server still checks everything. |
+| Accessibility | Visible labels for every control; hints and errors linked with `aria-describedby` and announced; focus moves to the first invalid field and, after navigation, to the page heading; skip link; Radix dialogs and tabs for keyboard support; statuses always in words as well as colour; every chart has a text alternative (table or `aria-label`). ESLint runs `jsx-a11y` (strict) and component tests run axe-core. |
+| Data views | Every data view goes through `QueryView`: a labelled loading state, an empty state that says what to do next, and an error state with a retry. |
+| Docker | `web` service (nginx, about 84 MB) on `127.0.0.1:${WEB_HOST_PORT:-8090}`. Full security headers and rate limiting remain Phase 9 work. |

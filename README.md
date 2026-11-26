@@ -15,7 +15,8 @@
 | 5 | Recommendations, maker–checker decisions, loan accounts, repayments, arrears, early settlement, portfolio analytics, demo seed | ✅ Implemented |
 | 6 | Synthetic dataset, shared feature builder, baseline / logistic regression / gradient boosting training | ✅ Implemented |
 | 7 | Evaluation, calibration, fairness, explanations, model registry, risk scoring API, model card | ✅ Implemented |
-| 8–10 | See [docs/ROADMAP.md](docs/ROADMAP.md) | Planned |
+| 8 | Web app: applicant portal, back-office workspace, risk and affordability views, loan servicing, portfolio and model reporting, admin screens | ✅ Implemented |
+| 9–10 | See [docs/ROADMAP.md](docs/ROADMAP.md) | Planned |
 
 ## Documentation
 
@@ -45,7 +46,7 @@ docker compose up --build -d
 docker compose exec api python -m app.cli create-admin --email admin@example.com --full-name "Platform Admin"
 ```
 
-The API is at <http://127.0.0.1:8000> — interactive docs at <http://127.0.0.1:8000/docs>, readiness at `/health/ready`.
+The web app is at <http://127.0.0.1:8090> and the API at <http://127.0.0.1:8000> (interactive docs at <http://127.0.0.1:8000/docs>, readiness at `/health/ready`). Change the host ports with `WEB_HOST_PORT` and `API_HOST_PORT` in `.env`.
 
 ### Demo data
 
@@ -96,6 +97,36 @@ uv run pytest
 ```
 
 Integration tests run against the `credify_test` database (created automatically by the Postgres container) using the real Alembic migrations. They are skipped if `CREDIFY_TEST_DATABASE_URL` is not set.
+
+## Frontend development
+
+Prerequisites: Node.js 22 and the API running on <http://127.0.0.1:8000> (Docker or `uv run uvicorn …` above).
+
+```bash
+cd frontend && npm ci
+```
+
+```bash
+npm run dev
+```
+
+The app opens at <http://localhost:5173>; Vite proxies `/api` and `/health` to the API (set `CREDIFY_API_PROXY_TARGET` to use another address). Sign in with a seeded account from `.local/demo-credentials.txt`, or register as a new applicant.
+
+### Checks
+
+```bash
+npm run format:check && npx eslint . --max-warnings 0 && npm run typecheck
+```
+
+```bash
+npm test
+```
+
+After changing the API, regenerate the contract and the TypeScript types (CI fails if they are stale):
+
+```bash
+cd backend && uv run python -m scripts.export_openapi && cd ../frontend && npm run gen:api
+```
 
 ## ML pipeline (offline)
 
